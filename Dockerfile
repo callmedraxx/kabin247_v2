@@ -30,6 +30,12 @@ RUN npm ci --only=production
 # Copy built files from builder
 COPY --from=builder /app/dist ./dist
 
+# Copy DKIM configuration (if exists)
+COPY src/config/dkim ./src/config/dkim
+
+# Copy assets (logo, etc.)
+COPY src/assets ./src/assets
+
 # Expose port
 EXPOSE 3000
 

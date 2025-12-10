@@ -21,7 +21,8 @@ export class InMemoryOrderRepository implements OrderRepository {
     // Calculate subtotal and total
     const subtotal = orderData.items.reduce((sum, item) => sum + item.price, 0);
     const serviceCharge = orderData.service_charge || 0;
-    const total = subtotal + serviceCharge;
+    const deliveryFee = orderData.delivery_fee || 0;
+    const total = subtotal + serviceCharge + deliveryFee;
 
     const newOrder: Order = {
       id: this.nextId++,
@@ -34,12 +35,14 @@ export class InMemoryOrderRepository implements OrderRepository {
       delivery_time: orderData.delivery_time,
       order_priority: orderData.order_priority,
       payment_method: orderData.payment_method,
+      order_type: orderData.order_type,
       status: 'awaiting_quote',
       description: orderData.description,
       notes: orderData.notes,
       reheating_instructions: orderData.reheating_instructions,
       packaging_instructions: orderData.packaging_instructions,
       dietary_restrictions: orderData.dietary_restrictions,
+      delivery_fee: deliveryFee,
       service_charge: serviceCharge,
       subtotal,
       total,
@@ -160,6 +163,7 @@ export class InMemoryOrderRepository implements OrderRepository {
     const existingOrder = this.orders[index];
     let subtotal = existingOrder.subtotal;
     let serviceCharge = existingOrder.service_charge;
+    let deliveryFee = existingOrder.delivery_fee;
 
     // If items are being updated, recalculate subtotal
     if (orderData.items && orderData.items.length > 0) {
@@ -185,13 +189,18 @@ export class InMemoryOrderRepository implements OrderRepository {
       serviceCharge = orderData.service_charge;
     }
 
-    const total = subtotal + serviceCharge;
+    if (orderData.delivery_fee !== undefined) {
+      deliveryFee = orderData.delivery_fee;
+    }
+
+    const total = subtotal + serviceCharge + deliveryFee;
 
     this.orders[index] = {
       ...existingOrder,
       ...orderData,
       subtotal,
       service_charge: serviceCharge,
+      delivery_fee: deliveryFee,
       total,
       updated_at: new Date(),
     };

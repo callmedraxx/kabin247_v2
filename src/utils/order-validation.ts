@@ -47,6 +47,26 @@ export function validateOrder(order: CreateOrderDTO | UpdateOrderDTO): Validatio
     }
   }
 
+  // Validate order_type (required for CreateOrderDTO)
+  if ('order_type' in order) {
+    const validOrderTypes = ['QE', 'Serv', 'Hub'];
+    if (!order.order_type) {
+      // Only require order_type for create (when client_name is present)
+      if ('client_name' in order) {
+        errors.push('order_type is required');
+      }
+    } else if (!validOrderTypes.includes(order.order_type)) {
+      errors.push(`order_type must be one of: ${validOrderTypes.join(', ')}`);
+    }
+  }
+
+  // Validate delivery_fee
+  if ('delivery_fee' in order && order.delivery_fee !== undefined) {
+    if (typeof order.delivery_fee !== 'number' || order.delivery_fee < 0) {
+      errors.push('delivery_fee must be a non-negative number');
+    }
+  }
+
   // Validate status enum (for UpdateOrderDTO)
   if ('status' in order && order.status) {
     const validStatuses = ['awaiting_quote', 'awaiting_caterer', 'quote_sent', 'quote_approved', 'in_preparation', 'ready_for_delivery', 'delivered', 'cancelled'];
@@ -133,6 +153,11 @@ export function normalizeOrderData(order: CreateOrderDTO | UpdateOrderDTO): Crea
   // Normalize service_charge to 0 if undefined
   if ('service_charge' in normalized && normalized.service_charge === undefined) {
     normalized.service_charge = 0;
+  }
+
+  // Normalize delivery_fee to 0 if undefined
+  if ('delivery_fee' in normalized && normalized.delivery_fee === undefined) {
+    normalized.delivery_fee = 0;
   }
 
   return normalized;

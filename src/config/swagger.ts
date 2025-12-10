@@ -10,12 +10,23 @@ const options: swaggerJsdoc.Options = {
     },
     servers: [
       {
+        url: process.env.API_URL || 'https://dev.api.kabin247.com',
+        description: 'Production API server',
+      },
+      {
         url: `http://localhost:${process.env.PORT || 3000}`,
-        description: 'Development server',
+        description: 'Local development server',
       },
     ],
   },
-  apis: ['./src/routes/*.ts', './src/index.ts'],
+  apis: [
+    process.env.NODE_ENV === 'production' 
+      ? './dist/routes/*.js'
+      : './src/routes/*.ts',
+    process.env.NODE_ENV === 'production'
+      ? './dist/index.js'
+      : './src/index.ts'
+  ],
 };
 
 export function setupSwagger() {

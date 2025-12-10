@@ -32,22 +32,26 @@ export class PostgreSQLOrderRepository implements OrderRepository {
     // Calculate subtotal and total
     const subtotal = orderData.items.reduce((sum, item) => sum + item.price, 0);
     const serviceCharge = orderData.service_charge || 0;
-    const total = subtotal + serviceCharge;
+    const deliveryFee = orderData.delivery_fee || 0;
+    const total = subtotal + serviceCharge + deliveryFee;
 
     // Insert order
     const orderQuery = `
       INSERT INTO orders (
-        order_number, client_name, caterer, airport, aircraft_tail_number,
-        delivery_date, delivery_time, order_priority, payment_method, status,
+        order_number, client_id, caterer_id, airport_id, client_name, caterer, airport, aircraft_tail_number,
+        delivery_date, delivery_time, order_priority, payment_method, status, order_type,
         description, notes, reheating_instructions, packaging_instructions,
-        dietary_restrictions, service_charge, subtotal, total,
+        dietary_restrictions, delivery_fee, service_charge, subtotal, total,
         created_at, updated_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, NOW(), NOW())
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, NOW(), NOW())
       RETURNING *
     `;
     
     const orderResult = await this.db.query(orderQuery, [
       orderNumber,
+      orderData.client_id || null,
+      orderData.caterer_id || null,
+      orderData.airport_id || null,
       orderData.client_name,
       orderData.caterer,
       orderData.airport,
@@ -57,11 +61,13 @@ export class PostgreSQLOrderRepository implements OrderRepository {
       orderData.order_priority,
       orderData.payment_method,
       'awaiting_quote',
+      orderData.order_type,
       orderData.description || null,
       orderData.notes || null,
       orderData.reheating_instructions || null,
       orderData.packaging_instructions || null,
       orderData.dietary_restrictions || null,
+      deliveryFee,
       serviceCharge,
       subtotal,
       total,
@@ -75,12 +81,13 @@ export class PostgreSQLOrderRepository implements OrderRepository {
       const item = orderData.items[i];
       const itemQuery = `
         INSERT INTO order_items (
-          order_id, item_name, item_description, portion_size, price, sort_order
-        ) VALUES ($1, $2, $3, $4, $5, $6)
+          order_id, menu_item_id, item_name, item_description, portion_size, price, sort_order
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7)
         RETURNING *
       `;
       const itemResult = await this.db.query(itemQuery, [
         order.id,
+        item.menu_item_id || null,
         item.item_name,
         item.item_description || null,
         item.portion_size,
@@ -97,23 +104,105 @@ export class PostgreSQLOrderRepository implements OrderRepository {
   }
 
   async findById(id: number): Promise<Order | null> {
-    const orderQuery = 'SELECT * FROM orders WHERE id = $1';
+    const orderQuery = `
+      SELECT 
+        o.*,
+        c.full_name as client_full_name,
+        c.full_address as client_full_address,
+        c.email as client_email,
+        c.contact_number as client_contact_number,
+        cat.caterer_name,
+        cat.caterer_number,
+        cat.caterer_email,
+        cat.airport_code_iata as cat_airport_code_iata,
+        cat.airport_code_icao as cat_airport_code_icao,
+        a.airport_name,
+        a.fbo_name,
+        a.fbo_email,
+        a.fbo_phone,
+        a.airport_code_iata,
+        a.airport_code_icao
+      FROM orders o
+      LEFT JOIN clients c ON o.client_id = c.id
+      LEFT JOIN caterers cat ON o.caterer_id = cat.id
+      LEFT JOIN airports a ON o.airport_id = a.id
+      WHERE o.id = $1
+    `;
     const orderResult = await this.db.query(orderQuery, [id]);
     
     if (orderResult.rows.length === 0) {
       return null;
     }
 
-    const order = orderResult.rows[0];
+    const row = orderResult.rows[0];
+    // Exclude flat fields and joined fields, keep only order table fields
+    const {
+      client_name,
+      caterer,
+      airport,
+      client_full_name,
+      client_full_address,
+      client_email,
+      client_contact_number,
+      caterer_name,
+      caterer_number,
+      caterer_email,
+      cat_airport_code_iata,
+      cat_airport_code_icao,
+      airport_name,
+      fbo_name,
+      fbo_email,
+      fbo_phone,
+      airport_code_iata,
+      airport_code_icao,
+      ...orderFields
+    } = row;
+    
+    const order: Order = {
+      ...orderFields,
+      client: row.client_full_name ? {
+        id: row.client_id,
+        full_name: row.client_full_name,
+        full_address: row.client_full_address,
+        email: row.client_email,
+        contact_number: row.client_contact_number,
+      } : undefined,
+      caterer_details: row.caterer_id ? {
+        id: row.caterer_id,
+        caterer_name: row.caterer_name,
+        caterer_number: row.caterer_number,
+        caterer_email: row.caterer_email,
+        airport_code_iata: row.cat_airport_code_iata,
+        airport_code_icao: row.cat_airport_code_icao,
+      } : undefined,
+      airport_details: row.airport_id ? {
+        id: row.airport_id,
+        airport_name: row.airport_name,
+        fbo_name: row.fbo_name,
+        fbo_email: row.fbo_email,
+        fbo_phone: row.fbo_phone,
+        airport_code_iata: row.airport_code_iata,
+        airport_code_icao: row.airport_code_icao,
+      } : undefined,
+    };
 
-    // Get order items
+    // Get order items with menu details
     const itemsQuery = `
-      SELECT * FROM order_items
-      WHERE order_id = $1
-      ORDER BY sort_order ASC, id ASC
+      SELECT oi.*, mi.item_name as menu_item_name, mi.item_description as menu_item_description
+      FROM order_items oi
+      LEFT JOIN menu_items mi ON oi.menu_item_id = mi.id
+      WHERE oi.order_id = $1
+      ORDER BY oi.sort_order ASC, oi.id ASC
     `;
     const itemsResult = await this.db.query(itemsQuery, [id]);
-    order.items = itemsResult.rows;
+    order.items = itemsResult.rows.map((item: any) => {
+      const { menu_item_name, menu_item_description, ...itemFields } = item;
+      return {
+        ...itemFields,
+        item_name: item.menu_item_name || item.item_name,
+        item_description: item.item_description || item.menu_item_description || undefined,
+      };
+    });
 
     return order;
   }
@@ -130,11 +219,11 @@ export class PostgreSQLOrderRepository implements OrderRepository {
     // Build WHERE clause for search
     if (params.search) {
       whereConditions.push(`(
-        order_number ILIKE $${paramIndex} OR
-        client_name ILIKE $${paramIndex} OR
-        caterer ILIKE $${paramIndex} OR
-        airport ILIKE $${paramIndex} OR
-        aircraft_tail_number ILIKE $${paramIndex}
+        o.order_number ILIKE $${paramIndex} OR
+        o.client_name ILIKE $${paramIndex} OR
+        o.caterer ILIKE $${paramIndex} OR
+        o.airport ILIKE $${paramIndex} OR
+        o.aircraft_tail_number ILIKE $${paramIndex}
       )`);
       queryParams.push(`%${params.search}%`);
       paramIndex++;
@@ -142,33 +231,33 @@ export class PostgreSQLOrderRepository implements OrderRepository {
 
     // Apply status filter
     if (params.status && params.status !== 'all') {
-      whereConditions.push(`status = $${paramIndex}`);
+      whereConditions.push(`o.status = $${paramIndex}`);
       queryParams.push(params.status);
       paramIndex++;
     }
 
     // Apply date range filter
     if (params.start_date) {
-      whereConditions.push(`delivery_date >= $${paramIndex}`);
+      whereConditions.push(`o.delivery_date >= $${paramIndex}`);
       queryParams.push(params.start_date);
       paramIndex++;
     }
     if (params.end_date) {
-      whereConditions.push(`delivery_date <= $${paramIndex}`);
+      whereConditions.push(`o.delivery_date <= $${paramIndex}`);
       queryParams.push(params.end_date);
       paramIndex++;
     }
 
     // Apply client_name filter
     if (params.client_name) {
-      whereConditions.push(`client_name ILIKE $${paramIndex}`);
+      whereConditions.push(`o.client_name ILIKE $${paramIndex}`);
       queryParams.push(`%${params.client_name}%`);
       paramIndex++;
     }
 
     // Apply caterer filter
     if (params.caterer) {
-      whereConditions.push(`caterer ILIKE $${paramIndex}`);
+      whereConditions.push(`o.caterer ILIKE $${paramIndex}`);
       queryParams.push(`%${params.caterer}%`);
       paramIndex++;
     }
@@ -181,27 +270,137 @@ export class PostgreSQLOrderRepository implements OrderRepository {
     const allowedSortFields = ['id', 'order_number', 'client_name', 'caterer', 'airport', 'delivery_date', 'created_at', 'updated_at', 'status'];
     const sortBy = allowedSortFields.includes(params.sortBy || '') ? params.sortBy : 'created_at';
     const sortOrder = params.sortOrder === 'asc' ? 'ASC' : 'DESC';
-    const orderBy = `ORDER BY ${sortBy} ${sortOrder}`;
+    const orderBy = `ORDER BY o.${sortBy} ${sortOrder}`;
 
     // Count query
     const countQuery = `SELECT COUNT(*) as total FROM orders ${whereClause}`;
     const countResult = await this.db.query(countQuery, queryParams);
     const total = parseInt(countResult.rows[0].total);
 
-    // Data query
+    // Data query with JOINs to get related details
     const limitParam = paramIndex;
     const offsetParam = paramIndex + 1;
     const dataParams = [...queryParams, limit, offset];
     const dataQuery = `
-      SELECT * FROM orders
+      SELECT 
+        o.*,
+        c.full_name as client_full_name,
+        c.full_address as client_full_address,
+        c.email as client_email,
+        c.contact_number as client_contact_number,
+        cat.caterer_name,
+        cat.caterer_number,
+        cat.caterer_email,
+        cat.airport_code_iata as cat_airport_code_iata,
+        cat.airport_code_icao as cat_airport_code_icao,
+        a.airport_name,
+        a.fbo_name,
+        a.fbo_email,
+        a.fbo_phone,
+        a.airport_code_iata,
+        a.airport_code_icao
+      FROM orders o
+      LEFT JOIN clients c ON o.client_id = c.id
+      LEFT JOIN caterers cat ON o.caterer_id = cat.id
+      LEFT JOIN airports a ON o.airport_id = a.id
       ${whereClause}
       ${orderBy}
       LIMIT $${limitParam} OFFSET $${offsetParam}
     `;
     const result = await this.db.query(dataQuery, dataParams);
 
+    // Map orders to include nested objects, excluding flat fields
+    const orders = result.rows.map((row: any) => {
+      // Exclude flat fields and joined fields, keep only order table fields
+      const {
+        client_name,
+        caterer,
+        airport,
+        client_full_name,
+        client_full_address,
+        client_email,
+        client_contact_number,
+        caterer_name,
+        caterer_number,
+        caterer_email,
+        cat_airport_code_iata,
+        cat_airport_code_icao,
+        airport_name,
+        fbo_name,
+        fbo_email,
+        fbo_phone,
+        airport_code_iata,
+        airport_code_icao,
+        ...orderFields
+      } = row;
+      
+      const order: Order = {
+        ...orderFields,
+        client: row.client_full_name ? {
+          id: row.client_id,
+          full_name: row.client_full_name,
+          full_address: row.client_full_address,
+          email: row.client_email,
+          contact_number: row.client_contact_number,
+        } : undefined,
+        caterer_details: row.caterer_id ? {
+          id: row.caterer_id,
+          caterer_name: row.caterer_name,
+          caterer_number: row.caterer_number,
+          caterer_email: row.caterer_email,
+          airport_code_iata: row.cat_airport_code_iata,
+          airport_code_icao: row.cat_airport_code_icao,
+        } : undefined,
+        airport_details: row.airport_id ? {
+          id: row.airport_id,
+          airport_name: row.airport_name,
+          fbo_name: row.fbo_name,
+          fbo_email: row.fbo_email,
+          fbo_phone: row.fbo_phone,
+          airport_code_iata: row.airport_code_iata,
+          airport_code_icao: row.airport_code_icao,
+        } : undefined,
+        items: [], // Will be populated below
+      };
+      return order;
+    });
+
+    // Fetch order items for all orders in one query
+    if (orders.length > 0) {
+      const orderIds = orders.map((o: Order) => o.id);
+      const itemsQuery = `
+        SELECT oi.*, mi.item_name as menu_item_name, mi.item_description as menu_item_description
+        FROM order_items oi
+        LEFT JOIN menu_items mi ON oi.menu_item_id = mi.id
+        WHERE oi.order_id = ANY($1::int[])
+        ORDER BY oi.order_id, oi.sort_order ASC, oi.id ASC
+      `;
+      const itemsResult = await this.db.query(itemsQuery, [orderIds]);
+      
+      // Group items by order_id
+      const itemsByOrderId = new Map<number, OrderItem[]>();
+      itemsResult.rows.forEach((item: any) => {
+        if (!itemsByOrderId.has(item.order_id)) {
+          itemsByOrderId.set(item.order_id, []);
+        }
+        const { menu_item_name, menu_item_description, ...itemFields } = item;
+        itemsByOrderId.get(item.order_id)!.push({
+          ...itemFields,
+          item_name: item.menu_item_name || item.item_name,
+          item_description: item.item_description || item.menu_item_description || undefined,
+        });
+      });
+
+      // Assign items to orders
+      orders.forEach((order: Order) => {
+        if (order.id) {
+          order.items = itemsByOrderId.get(order.id) || [];
+        }
+      });
+    }
+
     return {
-      orders: result.rows,
+      orders,
       total,
       page,
       limit,
@@ -274,6 +473,14 @@ export class PostgreSQLOrderRepository implements OrderRepository {
       updates.push(`service_charge = $${paramIndex++}`);
       values.push(orderData.service_charge);
     }
+    if (orderData.delivery_fee !== undefined) {
+      updates.push(`delivery_fee = $${paramIndex++}`);
+      values.push(orderData.delivery_fee);
+    }
+    if (orderData.order_type !== undefined) {
+      updates.push(`order_type = $${paramIndex++}`);
+      values.push(orderData.order_type);
+    }
 
     // Handle items update
     if (orderData.items && orderData.items.length > 0) {
@@ -298,21 +505,24 @@ export class PostgreSQLOrderRepository implements OrderRepository {
       }
     }
 
-    // Recalculate subtotal and total if items or service_charge changed
-    if (orderData.items || orderData.service_charge !== undefined) {
+    // Recalculate subtotal and total if items, service_charge, or delivery_fee changed
+    if (orderData.items || orderData.service_charge !== undefined || orderData.delivery_fee !== undefined) {
       const itemsQuery = 'SELECT SUM(price) as subtotal FROM order_items WHERE order_id = $1';
       const itemsResult = await this.db.query(itemsQuery, [id]);
       const subtotal = parseFloat(itemsResult.rows[0].subtotal || '0');
       
-      const orderResult = await this.db.query('SELECT service_charge FROM orders WHERE id = $1', [id]);
+      const orderResult = await this.db.query('SELECT service_charge, delivery_fee FROM orders WHERE id = $1', [id]);
       const serviceCharge = orderData.service_charge !== undefined 
         ? orderData.service_charge 
         : parseFloat(orderResult.rows[0].service_charge || '0');
+      const deliveryFee = orderData.delivery_fee !== undefined 
+        ? orderData.delivery_fee 
+        : parseFloat(orderResult.rows[0].delivery_fee || '0');
       
       updates.push(`subtotal = $${paramIndex++}`);
       values.push(subtotal);
       updates.push(`total = $${paramIndex++}`);
-      values.push(subtotal + serviceCharge);
+      values.push(subtotal + serviceCharge + deliveryFee);
     }
 
     if (updates.length === 0) {

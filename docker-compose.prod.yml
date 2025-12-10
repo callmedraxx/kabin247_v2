@@ -20,6 +20,17 @@ services:
       SWAGGER_TITLE: ${SWAGGER_TITLE:-Kabin247 API}
       SWAGGER_VERSION: ${SWAGGER_VERSION:-1.0.0}
       SWAGGER_DESCRIPTION: ${SWAGGER_DESCRIPTION:-Kabin247 Backend API Documentation}
+      # Email configuration
+      SMTP_HOST: ${SMTP_HOST}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USERNAME: ${SMTP_USERNAME}
+      SMTP_PASSWORD: ${SMTP_PASSWORD}
+      SMTP_EMAIL: ${SMTP_EMAIL:-noreply@kabin247.com}
+      # DKIM configuration
+      DKIM_ENABLED: ${DKIM_ENABLED:-true}
+      DKIM_SELECTOR: ${DKIM_SELECTOR:-default}
+      DKIM_DOMAIN: ${DKIM_DOMAIN:-kabin247.com}
+      DKIM_PRIVATE_KEY_PATH: ${DKIM_PRIVATE_KEY_PATH:-src/config/dkim/default.private.pem}
     depends_on:
       postgres:
         condition: service_healthy

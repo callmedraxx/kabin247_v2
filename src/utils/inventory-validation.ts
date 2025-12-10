@@ -63,8 +63,8 @@ export function validateInventoryItem(inventoryItem: CreateInventoryItemDTO | Up
   };
 }
 
-export function normalizeInventoryItemData(inventoryItem: CreateInventoryItemDTO | UpdateInventoryItemDTO): CreateInventoryItemDTO | UpdateInventoryItemDTO {
-  const normalized = { ...inventoryItem };
+export function normalizeInventoryItemData<T extends CreateInventoryItemDTO | UpdateInventoryItemDTO>(inventoryItem: T): T {
+  const normalized = { ...inventoryItem } as T;
 
   if ('item_name' in normalized && normalized.item_name) {
     normalized.item_name = normalized.item_name.trim();

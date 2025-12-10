@@ -75,8 +75,8 @@ export function validateTaxCharge(taxCharge: CreateTaxChargeDTO | UpdateTaxCharg
   };
 }
 
-export function normalizeTaxChargeData(taxCharge: CreateTaxChargeDTO | UpdateTaxChargeDTO): CreateTaxChargeDTO | UpdateTaxChargeDTO {
-  const normalized = { ...taxCharge };
+export function normalizeTaxChargeData<T extends CreateTaxChargeDTO | UpdateTaxChargeDTO>(taxCharge: T): T {
+  const normalized = { ...taxCharge } as T;
 
   if ('name' in normalized && normalized.name) {
     normalized.name = normalized.name.trim();

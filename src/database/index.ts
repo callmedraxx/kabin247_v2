@@ -127,6 +127,9 @@ async function createOrdersTable(): Promise<void> {
     CREATE TABLE IF NOT EXISTS orders (
       id SERIAL PRIMARY KEY,
       order_number VARCHAR(50) NOT NULL UNIQUE,
+      client_id INTEGER REFERENCES clients(id),
+      caterer_id INTEGER REFERENCES caterers(id),
+      airport_id INTEGER REFERENCES airports(id),
       client_name VARCHAR(255) NOT NULL,
       caterer VARCHAR(255) NOT NULL,
       airport VARCHAR(255) NOT NULL,
@@ -162,6 +165,7 @@ async function createOrdersTable(): Promise<void> {
     CREATE TABLE IF NOT EXISTS order_items (
       id SERIAL PRIMARY KEY,
       order_id INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+      menu_item_id INTEGER REFERENCES menu_items(id),
       item_name VARCHAR(255) NOT NULL,
       item_description TEXT,
       portion_size VARCHAR(255) NOT NULL,
@@ -177,7 +181,11 @@ async function createOrdersTable(): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status);
     CREATE INDEX IF NOT EXISTS idx_orders_delivery_date ON orders(delivery_date);
     CREATE INDEX IF NOT EXISTS idx_orders_created_at ON orders(created_at);
+    CREATE INDEX IF NOT EXISTS idx_orders_client_id ON orders(client_id);
+    CREATE INDEX IF NOT EXISTS idx_orders_caterer_id ON orders(caterer_id);
+    CREATE INDEX IF NOT EXISTS idx_orders_airport_id ON orders(airport_id);
     CREATE INDEX IF NOT EXISTS idx_order_items_order_id ON order_items(order_id);
+    CREATE INDEX IF NOT EXISTS idx_order_items_menu_item_id ON order_items(menu_item_id);
   `;
   
   try {
@@ -186,6 +194,16 @@ async function createOrdersTable(): Promise<void> {
   } catch (error) {
     console.error('Error creating orders tables:', error);
     // Don't throw - table might already exist
+  }
+
+  // Ensure columns exist in existing deployments
+  try {
+    await dbAdapter!.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS client_id INTEGER REFERENCES clients(id);`);
+    await dbAdapter!.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS caterer_id INTEGER REFERENCES caterers(id);`);
+    await dbAdapter!.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS airport_id INTEGER REFERENCES airports(id);`);
+    await dbAdapter!.query(`ALTER TABLE order_items ADD COLUMN IF NOT EXISTS menu_item_id INTEGER REFERENCES menu_items(id);`);
+  } catch (error) {
+    console.error('Error altering orders/order_items tables:', error);
   }
 }
 

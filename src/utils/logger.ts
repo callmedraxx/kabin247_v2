@@ -6,6 +6,8 @@ export enum LogLevel {
 }
 
 interface LogEntry {
+  // Allow enriched contextual fields without narrowing errors
+  [key: string]: any;
   timestamp: string;
   level: LogLevel;
   message: string;

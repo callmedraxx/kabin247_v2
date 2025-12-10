@@ -216,7 +216,7 @@ export class ClientService {
           email: getColumnValue(row, [
             'email', 'Email', 'EMAIL', 'Email Address', 'email address',
             'E-mail', 'e-mail', 'Contact Email', 'contact email'
-          ]),
+          ]) || '',
           contact_number: getColumnValue(row, [
             'contact_number', 'Contact_Number', 'Contact Number', 'contact number',
             'Phone', 'phone', 'Phone Number', 'phone number', 'Tel', 'tel',
@@ -225,8 +225,8 @@ export class ClientService {
         };
 
         // Validate required fields
-        if (!clientData.full_name || !clientData.full_address) {
-          const errorMsg = `Row ${i + 2}: Missing required fields (full_name, full_address)`;
+        if (!clientData.full_name || !clientData.full_address || !clientData.email) {
+          const errorMsg = `Row ${i + 2}: Missing required fields (full_name, full_address, email)`;
           errors.push(errorMsg);
           if (!isEmptyRow(row)) {
             Logger.warn(`Row ${i + 2} validation failed - missing required fields`, {

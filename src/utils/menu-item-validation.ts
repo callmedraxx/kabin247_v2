@@ -54,8 +54,8 @@ export function validateMenuItem(menuItem: CreateMenuItemDTO | UpdateMenuItemDTO
   };
 }
 
-export function normalizeMenuItemData(menuItem: CreateMenuItemDTO | UpdateMenuItemDTO): CreateMenuItemDTO | UpdateMenuItemDTO {
-  const normalized = { ...menuItem };
+export function normalizeMenuItemData<T extends CreateMenuItemDTO | UpdateMenuItemDTO>(menuItem: T): T {
+  const normalized = { ...menuItem } as T;
 
   if ('item_name' in normalized && normalized.item_name) {
     normalized.item_name = normalized.item_name.trim();

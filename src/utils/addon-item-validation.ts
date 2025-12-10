@@ -24,8 +24,8 @@ export function validateAddonItem(addonItem: CreateAddonItemDTO | UpdateAddonIte
   };
 }
 
-export function normalizeAddonItemData(addonItem: CreateAddonItemDTO | UpdateAddonItemDTO): CreateAddonItemDTO | UpdateAddonItemDTO {
-  const normalized = { ...addonItem };
+export function normalizeAddonItemData<T extends CreateAddonItemDTO | UpdateAddonItemDTO>(addonItem: T): T {
+  const normalized = { ...addonItem } as T;
 
   if ('name' in normalized && normalized.name) {
     normalized.name = normalized.name.trim();

@@ -35,6 +35,7 @@ const upload = multer({
  *       required:
  *         - full_name
  *         - full_address
+ *         - email
  *       properties:
  *         id:
  *           type: integer
@@ -63,6 +64,7 @@ const upload = multer({
  *       required:
  *         - full_name
  *         - full_address
+ *         - email
  *       properties:
  *         full_name:
  *           type: string

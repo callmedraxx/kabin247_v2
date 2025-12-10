@@ -11,7 +11,7 @@ export interface Client {
 export interface CreateClientDTO {
   full_name: string;
   full_address: string;
-  email?: string;
+  email: string;
   contact_number?: string;
 }
 

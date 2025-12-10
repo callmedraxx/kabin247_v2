@@ -12,12 +12,12 @@ export function validateClient(data: CreateClientDTO): { valid: boolean; errors:
     errors.push('full_address is required');
   }
 
-  // Email is optional - normalization will set invalid emails to undefined
-  if (data.email) {
+  if (!data.email || data.email.trim().length === 0) {
+    errors.push('email is required');
+  } else {
     const cleanedEmail = data.email.trim().toLowerCase();
-    if (cleanedEmail && !validateEmail(cleanedEmail)) {
-      // Since email is optional, we'll let normalization handle invalid emails
-      // by setting them to undefined, rather than failing validation
+    if (!validateEmail(cleanedEmail)) {
+      errors.push('email is invalid');
     }
   }
 
@@ -31,13 +31,11 @@ export function normalizeClientData(data: CreateClientDTO): CreateClientDTO {
   const normalized: CreateClientDTO = {
     full_name: (data.full_name || '').trim(),
     full_address: (data.full_address || '').trim(),
+    email: '',
   };
 
-  if (data.email) {
-    const cleaned = data.email.trim().toLowerCase();
-    // Only set email if it's valid, otherwise set to undefined
-    normalized.email = cleaned && validateEmail(cleaned) ? cleaned : undefined;
-  }
+  const cleanedEmail = (data.email || '').trim().toLowerCase();
+  normalized.email = cleanedEmail;
 
   if (data.contact_number) {
     normalized.contact_number = data.contact_number.trim() || undefined;

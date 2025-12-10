@@ -40,8 +40,8 @@ export function generateSlug(name: string): string {
     .replace(/^-+|-+$/g, '');
 }
 
-export function normalizeCategoryData(category: CreateCategoryDTO | UpdateCategoryDTO): CreateCategoryDTO | UpdateCategoryDTO {
-  const normalized = { ...category };
+export function normalizeCategoryData<T extends CreateCategoryDTO | UpdateCategoryDTO>(category: T): T {
+  const normalized = { ...category } as T;
 
   if ('name' in normalized && normalized.name) {
     normalized.name = normalized.name.trim();
