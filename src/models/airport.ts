@@ -1,9 +1,6 @@
 export interface Airport {
   id?: number;
   airport_name: string;
-  fbo_name: string;
-  fbo_email?: string;
-  fbo_phone?: string;
   airport_code_iata?: string;
   airport_code_icao?: string;
   created_at?: Date;
@@ -12,9 +9,6 @@ export interface Airport {
 
 export interface CreateAirportDTO {
   airport_name: string;
-  fbo_name: string;
-  fbo_email?: string;
-  fbo_phone?: string;
   airport_code_iata?: string;
   airport_code_icao?: string;
 }
@@ -35,4 +29,3 @@ export interface AirportListResponse {
   limit: number;
   offset: number;
 }
-

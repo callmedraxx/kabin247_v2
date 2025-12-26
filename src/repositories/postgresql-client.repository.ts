@@ -9,13 +9,14 @@ export class PostgreSQLClientRepository implements ClientRepository {
   async create(client: CreateClientDTO): Promise<Client> {
     const query = `
       INSERT INTO clients (
-        full_name, full_address, email, contact_number,
+        full_name, company_name, full_address, email, contact_number,
         created_at, updated_at
-      ) VALUES ($1, $2, $3, $4, NOW(), NOW())
+      ) VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
       RETURNING *
     `;
     const result = await this.db.query(query, [
       client.full_name,
+      client.company_name || null,
       client.full_address,
       client.email || null,
       client.contact_number || null,
@@ -30,8 +31,31 @@ export class PostgreSQLClientRepository implements ClientRepository {
   }
 
   async findAll(params: ClientSearchParams): Promise<ClientListResponse> {
-    const limit = params.limit || 50;
-    const offset = params.offset ?? (params.page && params.limit ? (params.page - 1) * params.limit : 0);
+    // Ensure limit and offset are valid integers - prevent NaN
+    const rawLimit = params.limit;
+    const parsedLimit = typeof rawLimit === 'number' && !isNaN(rawLimit) && isFinite(rawLimit) ? rawLimit : 50;
+    let limit = Math.max(1, Math.floor(parsedLimit));
+    // Final safety check - if limit is still NaN, use default
+    if (isNaN(limit) || !isFinite(limit)) {
+      limit = 50;
+    }
+    
+    // Calculate offset safely
+    let rawOffset: number;
+    if (params.offset !== undefined) {
+      const parsedOffset = typeof params.offset === 'number' && !isNaN(params.offset) && isFinite(params.offset) ? params.offset : 0;
+      rawOffset = parsedOffset;
+    } else if (params.page && params.limit) {
+      const rawPage = typeof params.page === 'number' && !isNaN(params.page) && isFinite(params.page) ? params.page : 1;
+      rawOffset = (rawPage - 1) * parsedLimit;
+    } else {
+      rawOffset = 0;
+    }
+    let offset = Math.max(0, Math.floor(rawOffset));
+    // Final safety check - if offset is still NaN, use default
+    if (isNaN(offset) || !isFinite(offset)) {
+      offset = 0;
+    }
     
     let whereClause = '';
     const queryParams: any[] = [];
@@ -40,17 +64,16 @@ export class PostgreSQLClientRepository implements ClientRepository {
     if (params.search) {
       whereClause = `WHERE (
         full_name ILIKE $1 OR
+        company_name ILIKE $1 OR
         full_address ILIKE $1 OR
         email ILIKE $1 OR
-        contact_number ILIKE $1 OR
-        airport_code ILIKE $1 OR
-        fbo_name ILIKE $1
+        contact_number ILIKE $1
       )`;
       queryParams.push(`%${params.search}%`);
     }
 
     // Build ORDER BY clause with SQL injection protection
-    const allowedSortFields = ['id', 'full_name', 'full_address', 'email', 'contact_number', 'airport_code', 'fbo_name', 'created_at', 'updated_at'];
+    const allowedSortFields = ['id', 'full_name', 'company_name', 'full_address', 'email', 'contact_number', 'created_at', 'updated_at'];
     const sortBy = allowedSortFields.includes(params.sortBy || '') ? params.sortBy : 'id';
     const sortOrder = params.sortOrder === 'desc' ? 'DESC' : 'ASC';
     const orderBy = `ORDER BY ${sortBy} ${sortOrder}`;
@@ -58,12 +81,15 @@ export class PostgreSQLClientRepository implements ClientRepository {
     // Count query
     const countQuery = `SELECT COUNT(*) as total FROM clients ${whereClause}`;
     const countResult = await this.db.query(countQuery, queryParams);
-    const total = parseInt(countResult.rows[0].total);
+    const total = parseInt(String(countResult.rows[0]?.total || '0'), 10) || 0;
 
-    // Data query
+    // Data query - ensure limit and offset are valid integers (final check before SQL)
     const limitParam = queryParams.length + 1;
     const offsetParam = queryParams.length + 2;
-    const dataParams = [...queryParams, limit, offset];
+    // Convert to integers and ensure they're not NaN
+    const safeLimit = Number.isInteger(limit) && limit > 0 ? limit : 50;
+    const safeOffset = Number.isInteger(offset) && offset >= 0 ? offset : 0;
+    const dataParams = [...queryParams, safeLimit, safeOffset];
     const dataQuery = `
       SELECT * FROM clients
       ${whereClause}
@@ -72,12 +98,18 @@ export class PostgreSQLClientRepository implements ClientRepository {
     `;
     const result = await this.db.query(dataQuery, dataParams);
 
+    // Calculate page safely
+    const calculatedPage = safeLimit > 0 ? Math.floor(safeOffset / safeLimit) + 1 : 1;
+    const page = (params.page && typeof params.page === 'number' && !isNaN(params.page) && isFinite(params.page)) 
+      ? params.page 
+      : calculatedPage;
+
     return {
       clients: result.rows,
       total,
-      page: params.page || Math.floor(offset / limit) + 1,
-      limit,
-      offset,
+      page: Number.isInteger(page) && page > 0 ? page : 1,
+      limit: safeLimit,
+      offset: safeOffset,
     };
   }
 
@@ -89,6 +121,10 @@ export class PostgreSQLClientRepository implements ClientRepository {
     if (client.full_name !== undefined) {
       updates.push(`full_name = $${paramIndex++}`);
       values.push(client.full_name);
+    }
+    if (client.company_name !== undefined) {
+      updates.push(`company_name = $${paramIndex++}`);
+      values.push(client.company_name || null);
     }
     if (client.full_address !== undefined) {
       updates.push(`full_address = $${paramIndex++}`);

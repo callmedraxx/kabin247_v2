@@ -30,11 +30,8 @@ export class InMemoryAirportRepository implements AirportRepository {
       filtered = filtered.filter(airport => {
         return (
           airport.airport_name?.toLowerCase().includes(searchLower) ||
-          airport.fbo_name?.toLowerCase().includes(searchLower) ||
           airport.airport_code_iata?.toLowerCase().includes(searchLower) ||
-          airport.airport_code_icao?.toLowerCase().includes(searchLower) ||
-          airport.fbo_email?.toLowerCase().includes(searchLower) ||
-          airport.fbo_phone?.toLowerCase().includes(searchLower)
+          airport.airport_code_icao?.toLowerCase().includes(searchLower)
         );
       });
     }

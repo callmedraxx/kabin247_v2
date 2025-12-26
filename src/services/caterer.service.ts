@@ -165,10 +165,10 @@ export class CatererService {
       // Also treat rows as empty if they don't have required fields
       // This prevents generating hundreds of error messages for rows with only optional fields
       const hasRequiredFields = getColumnValue(row, [
-        'caterer_name', 'Caterer_Name', 'Caterer Name', 'caterer name', 'Caterer', 'caterer',
+        'Caterer Name', 'caterer_name', 'Caterer_Name', 'caterer name', 'Caterer', 'caterer',
         'CATERER NAME', 'CatererName', 'Name'
       ]) && getColumnValue(row, [
-        'caterer_number', 'Caterer_Number', 'Caterer Number', 'caterer number', 'Number', 'number',
+        'Caterer Number', 'caterer_number', 'Caterer_Number', 'caterer number', 'Number', 'number',
         'CATERER NUMBER', 'CatererNumber', 'Phone Number', 'phone number'
       ]);
       
@@ -205,30 +205,30 @@ export class CatererService {
       }
 
       try {
-        // Try multiple column name variations (case-insensitive matching)
+        // Match exact export header names first, then fallback to variations
         const catererData: CreateCatererDTO = {
           caterer_name: getColumnValue(row, [
-            'caterer_name', 'Caterer_Name', 'Caterer Name', 'caterer name', 'Caterer', 'caterer',
+            'Caterer Name', 'caterer_name', 'Caterer_Name', 'caterer name', 'Caterer', 'caterer',
             'CATERER NAME', 'CatererName', 'Name'
           ]) || '',
           caterer_number: getColumnValue(row, [
-            'caterer_number', 'Caterer_Number', 'Caterer Number', 'caterer number', 'Number', 'number',
+            'Caterer Number', 'caterer_number', 'Caterer_Number', 'caterer number', 'Number', 'number',
             'CATERER NUMBER', 'CatererNumber', 'Phone Number', 'phone number'
           ]) || '',
           caterer_email: getColumnValue(row, [
-            'caterer_email', 'Caterer_Email', 'Caterer Email', 'caterer email', 'Email', 'email',
+            'Caterer Email', 'caterer_email', 'Caterer_Email', 'caterer email', 'Email', 'email',
             'CATERER EMAIL', 'CatererEmail', 'Contact Email', 'Email Address'
           ]),
           airport_code_iata: getColumnValue(row, [
-            'airport_code_iata', 'Airport_Code_IATA', 'IATA', 'iata', 'IATA Code', 'iata code',
+            'IATA Code', 'airport_code_iata', 'Airport_Code_IATA', 'IATA', 'iata', 'iata code',
             'Airport Code IATA', 'IATA_CODE', 'IataCode'
           ]),
           airport_code_icao: getColumnValue(row, [
-            'airport_code_icao', 'Airport_Code_ICAO', 'ICAO', 'icao', 'ICAO Code', 'icao code',
+            'ICAO Code', 'airport_code_icao', 'Airport_Code_ICAO', 'ICAO', 'icao', 'icao code',
             'Airport Code ICAO', 'ICAO_CODE', 'IcaoCode'
           ]),
           time_zone: getColumnValue(row, [
-            'time_zone', 'Time_Zone', 'Time Zone', 'time zone', 'Timezone', 'timezone',
+            'Time Zone', 'time_zone', 'Time_Zone', 'time zone', 'Timezone', 'timezone',
             'TIME ZONE', 'TimeZone', 'TZ', 'tz'
           ]),
         };

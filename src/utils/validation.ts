@@ -20,24 +20,6 @@ export function validateAirport(data: CreateAirportDTO): { valid: boolean; error
     errors.push('airport_name is required');
   }
 
-  if (!data.fbo_name || data.fbo_name.trim().length === 0) {
-    errors.push('fbo_name is required');
-  }
-
-  // Email is optional - normalization will set invalid emails to undefined
-  // We only validate emails that are present after normalization (meaning they passed validation)
-  // If an email can't be validated, normalization sets it to undefined (no validation error)
-  if (data.fbo_email) {
-    const cleanedEmail = data.fbo_email.trim().toLowerCase();
-    // Only validate if email has content after cleaning
-    // Invalid emails will be set to undefined by normalization, so no error needed
-    if (cleanedEmail && !validateEmail(cleanedEmail)) {
-      // Since email is optional, we'll let normalization handle invalid emails
-      // by setting them to undefined, rather than failing validation
-      // This allows rows with invalid emails to still be imported (just without email)
-    }
-  }
-
   // IATA and ICAO codes are optional - normalization will set invalid codes to undefined
   // We only validate codes that are present after normalization (meaning they passed cleaning)
   // If a code can't be cleaned to valid format, normalization sets it to undefined (no validation error)
@@ -70,19 +52,7 @@ export function validateAirport(data: CreateAirportDTO): { valid: boolean; error
 export function normalizeAirportData(data: CreateAirportDTO): CreateAirportDTO {
   const normalized: CreateAirportDTO = {
     airport_name: data.airport_name.trim(),
-    fbo_name: data.fbo_name.trim(),
   };
-
-  if (data.fbo_email) {
-    const cleaned = data.fbo_email.trim().toLowerCase();
-    // Only set email if it's valid, otherwise set to undefined (acceptable for optional field)
-    normalized.fbo_email = cleaned && validateEmail(cleaned) ? cleaned : undefined;
-  }
-
-  if (data.fbo_phone) {
-    const cleaned = data.fbo_phone.trim();
-    normalized.fbo_phone = cleaned || undefined;
-  }
 
   if (data.airport_code_iata) {
     // Remove all non-letter characters, then uppercase and trim

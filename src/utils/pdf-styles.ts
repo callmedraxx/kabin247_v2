@@ -68,9 +68,9 @@ export const defaultPDFStyles: PDFStyleConfig = {
     white: '#ffffff',
   },
   fonts: {
-    header: 'Helvetica-Bold',
-    body: 'Helvetica',
-    bold: 'Helvetica-Bold',
+    header: 'Times-Bold',
+    body: 'Times-Roman',
+    bold: 'Times-Bold',
   },
   spacing: {
     margin: 40,
@@ -98,13 +98,15 @@ export const defaultPDFStyles: PDFStyleConfig = {
  */
 export const statusLabels: { [key: string]: string } = {
   'awaiting_quote': 'PENDING QUOTE',
+  'awaiting_client_approval': 'AWAITING CLIENT APPROVAL',
   'awaiting_caterer': 'AWAITING CATERER',
-  'quote_sent': 'QUOTE SENT',
-  'quote_approved': 'APPROVED',
+  'caterer_confirmed': 'CATERER CONFIRMED',
   'in_preparation': 'IN PREPARATION',
   'ready_for_delivery': 'READY FOR DELIVERY',
   'delivered': 'DELIVERED',
+  'paid': 'PAID',
   'cancelled': 'CANCELLED',
+  'order_changed': 'ORDER CHANGED',
 };
 
 /**
@@ -112,13 +114,15 @@ export const statusLabels: { [key: string]: string } = {
  */
 export const statusColors: { [key: string]: string } = {
   'awaiting_quote': '#6366f1',      // Indigo
+  'awaiting_client_approval': '#a855f7', // Purple
   'awaiting_caterer': '#8b5cf6',    // Purple
-  'quote_sent': '#3b82f6',          // Blue
-  'quote_approved': '#059669',      // Emerald
+  'caterer_confirmed': '#10b981',   // Green
   'in_preparation': '#d97706',      // Amber
   'ready_for_delivery': '#0891b2',  // Cyan
   'delivered': '#059669',           // Emerald
+  'paid': '#10b981',                // Green
   'cancelled': '#dc2626',           // Red
+  'order_changed': '#f59e0b',       // Amber/Orange
 };
 
 /**
@@ -126,13 +130,15 @@ export const statusColors: { [key: string]: string } = {
  */
 export const statusBackgrounds: { [key: string]: string } = {
   'awaiting_quote': '#eef2ff',
+  'awaiting_client_approval': '#faf5ff',
   'awaiting_caterer': '#f3e8ff',
-  'quote_sent': '#eff6ff',
-  'quote_approved': '#ecfdf5',
+  'caterer_confirmed': '#d1fae5',
   'in_preparation': '#fffbeb',
   'ready_for_delivery': '#ecfeff',
   'delivered': '#ecfdf5',
+  'paid': '#d1fae5',
   'cancelled': '#fef2f2',
+  'order_changed': '#fef3c7',
 };
 
 /**
@@ -149,7 +155,10 @@ export const priorityColors: { [key: string]: string } = {
  * Order type display names
  */
 export const orderTypeLabels: { [key: string]: string } = {
-  'QE': 'Quick Eats',
-  'Serv': 'Service',
-  'Hub': 'Hub',
+  'Inflight order': 'Inflight Order',
+  'QE Serv Hub Order': 'QE Serv Hub Order',
+  'Restaurant Pickup Order': 'Restaurant Pickup Order',
+  'inflight': 'Inflight Order',
+  'qe_serv_hub': 'QE Serv Hub Order',
+  'restaurant_pickup': 'Restaurant Pickup Order',
 };

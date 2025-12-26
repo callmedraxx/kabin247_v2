@@ -205,6 +205,53 @@ clientRouter.get('/', async (req: Request, res: Response) => {
 
 /**
  * @swagger
+ * /clients/export:
+ *   get:
+ *     summary: Export all clients to Excel file
+ *     tags: [Clients]
+ *     responses:
+ *       200:
+ *         description: Excel file download
+ *         content:
+ *           application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+ *             schema:
+ *               type: string
+ *               format: binary
+ */
+clientRouter.get('/export', async (req: Request, res: Response) => {
+  try {
+    Logger.info('Client export requested', {
+      method: 'GET',
+      url: '/clients/export',
+      query: req.query,
+    });
+    
+    // Ignore any query parameters - export always exports all clients
+    const buffer = await clientService.exportToExcel();
+    
+    Logger.info('Client export completed', {
+      method: 'GET',
+      url: '/clients/export',
+      fileSize: buffer.length,
+    });
+    
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', 'attachment; filename=clients.xlsx');
+    res.send(buffer);
+  } catch (error: any) {
+    Logger.error('Failed to export clients to Excel', error, {
+      method: 'GET',
+      url: '/clients/export',
+      query: req.query,
+      errorMessage: error.message,
+      errorStack: error.stack,
+    });
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * @swagger
  * /clients/{id}:
  *   get:
  *     summary: Get client by ID
@@ -495,32 +542,3 @@ clientRouter.post('/import', (req: Request, res: Response, next: NextFunction) =
   }
 });
 
-/**
- * @swagger
- * /clients/export:
- *   get:
- *     summary: Export all clients to Excel file
- *     tags: [Clients]
- *     responses:
- *       200:
- *         description: Excel file download
- *         content:
- *           application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
- *             schema:
- *               type: string
- *               format: binary
- */
-clientRouter.get('/export', async (req: Request, res: Response) => {
-  try {
-    const buffer = await clientService.exportToExcel();
-    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    res.setHeader('Content-Disposition', 'attachment; filename=clients.xlsx');
-    res.send(buffer);
-  } catch (error: any) {
-    Logger.error('Failed to export clients to Excel', error, {
-      method: 'GET',
-      url: '/clients/export',
-    });
-    res.status(500).json({ error: error.message });
-  }
-});

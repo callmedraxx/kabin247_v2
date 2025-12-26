@@ -1,6 +1,7 @@
 import { Client } from './client';
 import { Caterer } from './caterer';
 import { Airport } from './airport';
+import { FBO } from './fbo';
 
 export interface OrderItem {
   id?: number;
@@ -10,10 +11,34 @@ export interface OrderItem {
   item_description?: string;
   portion_size: string;
   price: number;
+  category?: string;
+  packaging?: string;
   sort_order?: number;
 }
 
-export type OrderType = 'QE' | 'Serv' | 'Hub';
+// Order type aliases for frontend convenience
+export type OrderTypeAlias = 'inflight' | 'qe_serv_hub' | 'restaurant_pickup';
+
+// Order type display names
+export type OrderType = 'Inflight order' | 'QE Serv Hub Order' | 'Restaurant Pickup Order';
+
+// Mapping from aliases to display names
+export const ORDER_TYPE_MAP: Record<OrderTypeAlias, OrderType> = {
+  inflight: 'Inflight order',
+  qe_serv_hub: 'QE Serv Hub Order',
+  restaurant_pickup: 'Restaurant Pickup Order',
+};
+
+// Helper function to convert alias to order type
+export function getOrderTypeFromAlias(alias: string): OrderType | null {
+  return ORDER_TYPE_MAP[alias as OrderTypeAlias] || null;
+}
+
+// Helper function to convert order type to alias
+export function getAliasFromOrderType(orderType: OrderType): OrderTypeAlias | null {
+  const entry = Object.entries(ORDER_TYPE_MAP).find(([_, value]) => value === orderType);
+  return entry ? (entry[0] as OrderTypeAlias) : null;
+}
 
 export interface Order {
   id?: number;
@@ -21,6 +46,7 @@ export interface Order {
   client_id?: number;
   caterer_id?: number;
   airport_id?: number;
+  fbo_id?: number;
   client_name: string;
   caterer: string;
   airport: string;
@@ -29,7 +55,7 @@ export interface Order {
   delivery_time: string; // Time format: HH:mm
   order_priority: 'low' | 'normal' | 'high' | 'urgent';
   payment_method: 'card' | 'ACH';
-  status: 'awaiting_quote' | 'awaiting_caterer' | 'quote_sent' | 'quote_approved' | 'in_preparation' | 'ready_for_delivery' | 'delivered' | 'cancelled';
+  status: 'awaiting_quote' | 'awaiting_client_approval' | 'awaiting_caterer' | 'caterer_confirmed' | 'in_preparation' | 'ready_for_delivery' | 'delivered' | 'paid' | 'cancelled' | 'order_changed';
   order_type: OrderType;
   description?: string;
   notes?: string;
@@ -40,19 +66,23 @@ export interface Order {
   service_charge: number;
   subtotal: number;
   total: number;
+  revision_count: number;
   items?: OrderItem[];
   client?: Client;
   caterer_details?: Caterer;
   airport_details?: Airport;
+  fbo?: FBO;
   created_at?: Date;
   updated_at?: Date;
   completed_at?: Date;
 }
 
 export interface CreateOrderDTO {
+  order_number?: string; // Optional: if provided, use it; otherwise auto-generate
   client_id?: number;
   caterer_id?: number;
   airport_id?: number;
+  fbo_id?: number;
   client_name: string;
   caterer: string;
   airport: string;
@@ -61,7 +91,7 @@ export interface CreateOrderDTO {
   delivery_time: string;
   order_priority: 'low' | 'normal' | 'high' | 'urgent';
   payment_method: 'card' | 'ACH';
-  order_type: OrderType;
+  order_type: OrderType | OrderTypeAlias; // Accept both alias and full type
   description?: string;
   notes?: string;
   reheating_instructions?: string;
@@ -75,6 +105,8 @@ export interface CreateOrderDTO {
     item_description?: string;
     portion_size: string;
     price: number;
+    category?: string;
+    packaging?: string;
   }>;
 }
 
@@ -82,12 +114,13 @@ export interface CreateOrderFromRefsDTO {
   client_id: number;
   caterer_id: number;
   airport_id: number;
+  fbo_id?: number;
   aircraft_tail_number?: string;
   delivery_date: string;
   delivery_time: string;
   order_priority: 'low' | 'normal' | 'high' | 'urgent';
   payment_method: 'card' | 'ACH';
-  order_type: OrderType;
+  order_type: OrderType | OrderTypeAlias; // Accept both alias and full type
   description?: string;
   notes?: string;
   reheating_instructions?: string;
@@ -100,20 +133,27 @@ export interface CreateOrderFromRefsDTO {
     item_description?: string | null;
     portion_size: string;
     price: number;
+    category?: string | null;
+    packaging?: string | null;
   }>;
 }
 
 export interface UpdateOrderDTO {
+  order_number?: string; // Allow updating order number
+  client_id?: number;
+  caterer_id?: number;
+  airport_id?: number;
   client_name?: string;
   caterer?: string;
   airport?: string;
+  fbo_id?: number | null;
   aircraft_tail_number?: string;
   delivery_date?: string;
   delivery_time?: string;
   order_priority?: 'low' | 'normal' | 'high' | 'urgent';
   payment_method?: 'card' | 'ACH';
-  status?: 'awaiting_quote' | 'awaiting_caterer' | 'quote_sent' | 'quote_approved' | 'in_preparation' | 'ready_for_delivery' | 'delivered' | 'cancelled';
-  order_type?: OrderType;
+  status?: 'awaiting_quote' | 'awaiting_client_approval' | 'awaiting_caterer' | 'caterer_confirmed' | 'in_preparation' | 'ready_for_delivery' | 'delivered' | 'paid' | 'cancelled' | 'order_changed';
+  order_type?: OrderType | OrderTypeAlias; // Accept both alias and full type
   description?: string;
   notes?: string;
   reheating_instructions?: string;
@@ -123,10 +163,13 @@ export interface UpdateOrderDTO {
   service_charge?: number;
   items?: Array<{
     id?: number;
+    menu_item_id?: number;
     item_name: string;
     item_description?: string;
     portion_size: string;
     price: number;
+    category?: string;
+    packaging?: string;
   }>;
 }
 
@@ -151,7 +194,7 @@ export interface OrderListResponse {
 }
 
 export interface OrderStatusUpdateDTO {
-  status: 'awaiting_quote' | 'awaiting_caterer' | 'quote_sent' | 'quote_approved' | 'in_preparation' | 'ready_for_delivery' | 'delivered' | 'cancelled';
+  status: 'awaiting_quote' | 'awaiting_client_approval' | 'awaiting_caterer' | 'caterer_confirmed' | 'in_preparation' | 'ready_for_delivery' | 'delivered' | 'paid' | 'cancelled' | 'order_changed';
 }
 
 export interface OrderEmailDTO {

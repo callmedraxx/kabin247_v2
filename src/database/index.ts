@@ -30,12 +30,17 @@ export async function initializeDatabase(): Promise<void> {
     await createAirportsTable();
     await createCaterersTable();
     await createClientsTable();
+    await createFBOTable();
     await createOrdersTable();
     await createCategoriesTable();
     await createMenuItemsTable();
     await createAddonItemsTable();
     await createInventoryTable();
     await createTaxChargesTable();
+    await createUsersTable();
+    await createRefreshTokensTable();
+    await createInvitesTable();
+    await createPasswordResetOtpsTable();
   }
 }
 
@@ -44,9 +49,6 @@ async function createAirportsTable(): Promise<void> {
     CREATE TABLE IF NOT EXISTS airports (
       id SERIAL PRIMARY KEY,
       airport_name VARCHAR(255) NOT NULL,
-      fbo_name VARCHAR(255) NOT NULL,
-      fbo_email VARCHAR(255),
-      fbo_phone VARCHAR(50),
       airport_code_iata CHAR(3),
       airport_code_icao CHAR(4),
       created_at TIMESTAMP DEFAULT NOW(),
@@ -56,7 +58,6 @@ async function createAirportsTable(): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_airports_iata ON airports(airport_code_iata);
     CREATE INDEX IF NOT EXISTS idx_airports_icao ON airports(airport_code_icao);
     CREATE INDEX IF NOT EXISTS idx_airports_name ON airports(airport_name);
-    CREATE INDEX IF NOT EXISTS idx_airports_fbo_name ON airports(fbo_name);
   `;
   
   try {
@@ -65,6 +66,16 @@ async function createAirportsTable(): Promise<void> {
   } catch (error) {
     console.error('Error creating airports table:', error);
     // Don't throw - table might already exist
+  }
+
+  // Remove FBO columns from existing deployments if they exist
+  try {
+    await dbAdapter!.query(`ALTER TABLE airports DROP COLUMN IF EXISTS fbo_name;`);
+    await dbAdapter!.query(`ALTER TABLE airports DROP COLUMN IF EXISTS fbo_email;`);
+    await dbAdapter!.query(`ALTER TABLE airports DROP COLUMN IF EXISTS fbo_phone;`);
+    await dbAdapter!.query(`DROP INDEX IF EXISTS idx_airports_fbo_name;`);
+  } catch (error) {
+    console.error('Error removing FBO columns from airports table:', error);
   }
 }
 
@@ -122,6 +133,30 @@ async function createClientsTable(): Promise<void> {
   }
 }
 
+async function createFBOTable(): Promise<void> {
+  const createTableQuery = `
+    CREATE TABLE IF NOT EXISTS fbos (
+      id SERIAL PRIMARY KEY,
+      fbo_name VARCHAR(255) NOT NULL,
+      fbo_email VARCHAR(255),
+      fbo_phone VARCHAR(50),
+      created_at TIMESTAMP DEFAULT NOW(),
+      updated_at TIMESTAMP DEFAULT NOW()
+    );
+    
+    CREATE INDEX IF NOT EXISTS idx_fbos_name ON fbos(fbo_name);
+    CREATE INDEX IF NOT EXISTS idx_fbos_email ON fbos(fbo_email);
+  `;
+  
+  try {
+    await dbAdapter!.query(createTableQuery);
+    console.log('FBOs table created successfully');
+  } catch (error) {
+    console.error('Error creating fbos table:', error);
+    // Don't throw - table might already exist
+  }
+}
+
 async function createOrdersTable(): Promise<void> {
   const createTableQuery = `
     CREATE TABLE IF NOT EXISTS orders (
@@ -130,6 +165,7 @@ async function createOrdersTable(): Promise<void> {
       client_id INTEGER REFERENCES clients(id),
       caterer_id INTEGER REFERENCES caterers(id),
       airport_id INTEGER REFERENCES airports(id),
+      fbo_id INTEGER REFERENCES fbos(id),
       client_name VARCHAR(255) NOT NULL,
       caterer VARCHAR(255) NOT NULL,
       airport VARCHAR(255) NOT NULL,
@@ -138,15 +174,18 @@ async function createOrdersTable(): Promise<void> {
       delivery_time VARCHAR(10) NOT NULL,
       order_priority VARCHAR(20) NOT NULL CHECK (order_priority IN ('low', 'normal', 'high', 'urgent')),
       payment_method VARCHAR(20) NOT NULL CHECK (payment_method IN ('card', 'ACH')),
-      status VARCHAR(50) NOT NULL DEFAULT 'awaiting_quote' CHECK (status IN ('awaiting_quote', 'awaiting_caterer', 'quote_sent', 'quote_approved', 'in_preparation', 'ready_for_delivery', 'delivered', 'cancelled')),
+      status VARCHAR(50) NOT NULL DEFAULT 'awaiting_quote' CHECK (status IN ('awaiting_quote', 'awaiting_client_approval', 'awaiting_caterer', 'caterer_confirmed', 'in_preparation', 'ready_for_delivery', 'delivered', 'paid', 'cancelled', 'order_changed')),
+      order_type VARCHAR(50) NOT NULL CHECK (order_type IN ('Inflight order', 'QE Serv Hub Order', 'Restaurant Pickup Order')),
       description TEXT,
       notes TEXT,
       reheating_instructions TEXT,
       packaging_instructions TEXT,
       dietary_restrictions TEXT,
+      delivery_fee DECIMAL(10,2) NOT NULL DEFAULT 0.00,
       service_charge DECIMAL(10,2) NOT NULL DEFAULT 0.00,
       subtotal DECIMAL(10,2) NOT NULL DEFAULT 0.00,
       total DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+      revision_count INTEGER NOT NULL DEFAULT 0,
       created_at TIMESTAMP DEFAULT NOW(),
       updated_at TIMESTAMP DEFAULT NOW(),
       completed_at TIMESTAMP
@@ -170,9 +209,22 @@ async function createOrdersTable(): Promise<void> {
       item_description TEXT,
       portion_size VARCHAR(255) NOT NULL,
       price DECIMAL(10,2) NOT NULL CHECK (price > 0),
+      category VARCHAR(255),
+      packaging VARCHAR(255),
       sort_order INTEGER DEFAULT 0,
       created_at TIMESTAMP DEFAULT NOW()
     );
+    
+    -- Add category and packaging columns if they don't exist (for existing databases)
+    DO $$ 
+    BEGIN
+      IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'order_items' AND column_name = 'category') THEN
+        ALTER TABLE order_items ADD COLUMN category VARCHAR(255);
+      END IF;
+      IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'order_items' AND column_name = 'packaging') THEN
+        ALTER TABLE order_items ADD COLUMN packaging VARCHAR(255);
+      END IF;
+    END $$;
     
     CREATE INDEX IF NOT EXISTS idx_orders_order_number ON orders(order_number);
     CREATE INDEX IF NOT EXISTS idx_orders_client_name ON orders(client_name);
@@ -196,14 +248,48 @@ async function createOrdersTable(): Promise<void> {
     // Don't throw - table might already exist
   }
 
-  // Ensure columns exist in existing deployments
+  // Ensure columns exist in existing deployments and create indexes
   try {
     await dbAdapter!.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS client_id INTEGER REFERENCES clients(id);`);
     await dbAdapter!.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS caterer_id INTEGER REFERENCES caterers(id);`);
     await dbAdapter!.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS airport_id INTEGER REFERENCES airports(id);`);
+    await dbAdapter!.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS fbo_id INTEGER REFERENCES fbos(id);`);
+    await dbAdapter!.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS order_type VARCHAR(50) CHECK (order_type IN ('Inflight order', 'QE Serv Hub Order', 'Restaurant Pickup Order'));`);
+    await dbAdapter!.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivery_fee DECIMAL(10,2) NOT NULL DEFAULT 0.00;`);
     await dbAdapter!.query(`ALTER TABLE order_items ADD COLUMN IF NOT EXISTS menu_item_id INTEGER REFERENCES menu_items(id);`);
+    
+    // Create indexes after columns are ensured to exist
+    await dbAdapter!.query(`CREATE INDEX IF NOT EXISTS idx_orders_fbo_id ON orders(fbo_id);`);
+    await dbAdapter!.query(`CREATE INDEX IF NOT EXISTS idx_orders_order_type ON orders(order_type);`);
   } catch (error) {
     console.error('Error altering orders/order_items tables:', error);
+  }
+
+  // Update status constraint for existing databases to include new statuses
+  try {
+    await dbAdapter!.query(`
+      ALTER TABLE orders DROP CONSTRAINT IF EXISTS orders_status_check;
+      ALTER TABLE orders ADD CONSTRAINT orders_status_check CHECK (status IN ('awaiting_quote', 'awaiting_client_approval', 'awaiting_caterer', 'caterer_confirmed', 'in_preparation', 'ready_for_delivery', 'delivered', 'paid', 'cancelled', 'order_changed'));
+    `);
+    console.log('Status constraint updated successfully');
+  } catch (error) {
+    console.error('Error updating status constraint:', error);
+  }
+
+  // Add revision_count column to orders for existing databases
+  try {
+    await dbAdapter!.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS revision_count INTEGER NOT NULL DEFAULT 0;`);
+    console.log('revision_count column added to orders');
+  } catch (error) {
+    console.error('Error adding revision_count column:', error);
+  }
+
+  // Add company_name column to clients for existing databases
+  try {
+    await dbAdapter!.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS company_name VARCHAR(255);`);
+    console.log('company_name column added to clients');
+  } catch (error) {
+    console.error('Error adding company_name column:', error);
   }
 }
 
@@ -261,10 +347,23 @@ async function createMenuItemsTable(): Promise<void> {
       updated_at TIMESTAMP DEFAULT NOW()
     );
     
+    CREATE TABLE IF NOT EXISTS menu_item_variant_caterer_prices (
+      id SERIAL PRIMARY KEY,
+      variant_id INTEGER NOT NULL REFERENCES menu_item_variants(id) ON DELETE CASCADE,
+      caterer_id INTEGER NOT NULL REFERENCES caterers(id),
+      price DECIMAL(10,2) NOT NULL CHECK (price > 0),
+      created_at TIMESTAMP DEFAULT NOW(),
+      updated_at TIMESTAMP DEFAULT NOW(),
+      UNIQUE(variant_id, caterer_id)
+    );
+    
     CREATE INDEX IF NOT EXISTS idx_menu_items_category ON menu_items(category_id);
     CREATE INDEX IF NOT EXISTS idx_menu_items_food_type ON menu_items(food_type);
     CREATE INDEX IF NOT EXISTS idx_menu_items_active ON menu_items(is_active);
     CREATE INDEX IF NOT EXISTS idx_variants_menu_item ON menu_item_variants(menu_item_id);
+    CREATE INDEX IF NOT EXISTS idx_variant_caterer_prices_variant ON menu_item_variant_caterer_prices(variant_id);
+    CREATE INDEX IF NOT EXISTS idx_variant_caterer_prices_caterer ON menu_item_variant_caterer_prices(caterer_id);
+    CREATE INDEX IF NOT EXISTS idx_variant_caterer_prices_composite ON menu_item_variant_caterer_prices(variant_id, caterer_id);
   `;
   
   try {
@@ -272,6 +371,26 @@ async function createMenuItemsTable(): Promise<void> {
     console.log('Menu items and variants tables created successfully');
   } catch (error) {
     console.error('Error creating menu items tables:', error);
+  }
+
+  // Ensure menu_item_variant_caterer_prices table exists for existing deployments
+  try {
+    await dbAdapter!.query(`
+      CREATE TABLE IF NOT EXISTS menu_item_variant_caterer_prices (
+        id SERIAL PRIMARY KEY,
+        variant_id INTEGER NOT NULL REFERENCES menu_item_variants(id) ON DELETE CASCADE,
+        caterer_id INTEGER NOT NULL REFERENCES caterers(id),
+        price DECIMAL(10,2) NOT NULL CHECK (price > 0),
+        created_at TIMESTAMP DEFAULT NOW(),
+        updated_at TIMESTAMP DEFAULT NOW(),
+        UNIQUE(variant_id, caterer_id)
+      );
+    `);
+    await dbAdapter!.query(`CREATE INDEX IF NOT EXISTS idx_variant_caterer_prices_variant ON menu_item_variant_caterer_prices(variant_id);`);
+    await dbAdapter!.query(`CREATE INDEX IF NOT EXISTS idx_variant_caterer_prices_caterer ON menu_item_variant_caterer_prices(caterer_id);`);
+    await dbAdapter!.query(`CREATE INDEX IF NOT EXISTS idx_variant_caterer_prices_composite ON menu_item_variant_caterer_prices(variant_id, caterer_id);`);
+  } catch (error) {
+    console.error('Error creating menu_item_variant_caterer_prices table:', error);
   }
 }
 
@@ -362,6 +481,110 @@ async function createTaxChargesTable(): Promise<void> {
     console.log('Tax charges table created successfully');
   } catch (error) {
     console.error('Error creating tax charges table:', error);
+  }
+}
+
+async function createUsersTable(): Promise<void> {
+  const createTableQuery = `
+    CREATE TABLE IF NOT EXISTS users (
+      id SERIAL PRIMARY KEY,
+      email VARCHAR(255) NOT NULL UNIQUE,
+      password_hash TEXT NOT NULL,
+      role VARCHAR(10) NOT NULL CHECK (role IN ('ADMIN', 'CSR')),
+      is_active BOOLEAN NOT NULL DEFAULT true,
+      permissions JSONB,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+      updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+    );
+    
+    CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+    CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);
+    CREATE INDEX IF NOT EXISTS idx_users_active ON users(is_active);
+  `;
+  
+  try {
+    await dbAdapter!.query(createTableQuery);
+    console.log('Users table created successfully');
+  } catch (error) {
+    console.error('Error creating users table:', error);
+  }
+}
+
+async function createRefreshTokensTable(): Promise<void> {
+  const createTableQuery = `
+    CREATE TABLE IF NOT EXISTS refresh_tokens (
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      jti UUID NOT NULL UNIQUE,
+      token_hash TEXT NOT NULL,
+      expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+      revoked_at TIMESTAMP WITH TIME ZONE,
+      user_agent TEXT,
+      ip INET,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+    );
+    
+    CREATE INDEX IF NOT EXISTS idx_refresh_tokens_user_id ON refresh_tokens(user_id);
+    CREATE INDEX IF NOT EXISTS idx_refresh_tokens_jti ON refresh_tokens(jti);
+    CREATE INDEX IF NOT EXISTS idx_refresh_tokens_expires_at ON refresh_tokens(expires_at);
+  `;
+  
+  try {
+    await dbAdapter!.query(createTableQuery);
+    console.log('Refresh tokens table created successfully');
+  } catch (error) {
+    console.error('Error creating refresh_tokens table:', error);
+  }
+}
+
+async function createInvitesTable(): Promise<void> {
+  const createTableQuery = `
+    CREATE TABLE IF NOT EXISTS invites (
+      id SERIAL PRIMARY KEY,
+      email VARCHAR(255) NOT NULL,
+      role VARCHAR(10) NOT NULL CHECK (role = 'CSR'),
+      permissions JSONB NOT NULL,
+      token_hash TEXT NOT NULL UNIQUE,
+      expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+      used_at TIMESTAMP WITH TIME ZONE,
+      invited_by_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+    );
+    
+    CREATE INDEX IF NOT EXISTS idx_invites_email ON invites(email);
+    CREATE INDEX IF NOT EXISTS idx_invites_expires_at ON invites(expires_at);
+    CREATE INDEX IF NOT EXISTS idx_invites_token_hash ON invites(token_hash);
+  `;
+  
+  try {
+    await dbAdapter!.query(createTableQuery);
+    console.log('Invites table created successfully');
+  } catch (error) {
+    console.error('Error creating invites table:', error);
+  }
+}
+
+async function createPasswordResetOtpsTable(): Promise<void> {
+  const createTableQuery = `
+    CREATE TABLE IF NOT EXISTS password_reset_otps (
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      otp_hash TEXT NOT NULL,
+      expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+      used_at TIMESTAMP WITH TIME ZONE,
+      request_count INTEGER NOT NULL DEFAULT 1,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+    );
+    
+    CREATE INDEX IF NOT EXISTS idx_password_reset_otps_user_id ON password_reset_otps(user_id);
+    CREATE INDEX IF NOT EXISTS idx_password_reset_otps_expires_at ON password_reset_otps(expires_at);
+  `;
+  
+  try {
+    await dbAdapter!.query(createTableQuery);
+    console.log('Password reset OTPs table created successfully');
+  } catch (error) {
+    console.error('Error creating password_reset_otps table:', error);
   }
 }
 

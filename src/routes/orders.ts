@@ -2,11 +2,15 @@ import { Router, Request, Response } from 'express';
 import { OrderService } from '../services/order.service';
 import { CreateOrderDTO, UpdateOrderDTO, OrderSearchParams, OrderStatusUpdateDTO, OrderEmailDTO, CreateOrderFromRefsDTO } from '../models/order';
 import { Logger } from '../utils/logger';
-import { generateOrderHTML } from '../utils/order-pdf';
+import { generateOrderHTML, generateOrderHTMLB } from '../utils/order-pdf';
 import { getEmailService, EmailRecipient } from '../services/email.service';
+import { requireAuth, requirePermission, requireRole } from '../middleware/auth';
 
 export const orderRouter = Router();
 const orderService = new OrderService();
+
+// All order routes require authentication
+orderRouter.use(requireAuth);
 
 /**
  * @swagger
@@ -40,7 +44,7 @@ const orderService = new OrderService();
  *           enum: [card, ACH]
  *         status:
  *           type: string
- *           enum: [awaiting_quote, awaiting_caterer, quote_sent, quote_approved, in_preparation, ready_for_delivery, delivered, cancelled]
+ *           enum: [awaiting_quote, awaiting_client_approval, awaiting_caterer, caterer_confirmed, in_preparation, ready_for_delivery, delivered, paid, cancelled, order_changed]
  *         description:
  *           type: string
  *         notes:
@@ -53,7 +57,8 @@ const orderService = new OrderService();
  *           type: string
  *         order_type:
  *           type: string
- *           enum: [QE, Serv, Hub]
+ *           enum: [Inflight order, QE Serv Hub Order, Restaurant Pickup Order]
+ *           description: Order type display name
  *         delivery_fee:
  *           type: number
  *         service_charge:
@@ -88,6 +93,12 @@ const orderService = new OrderService();
  *           type: string
  *         price:
  *           type: number
+ *         category:
+ *           type: string
+ *           description: Item category (e.g., Appetizers, Main Course)
+ *         packaging:
+ *           type: string
+ *           description: Item packaging (e.g., Foil container, Insulated box)
  *         sort_order:
  *           type: integer
  *     CreateOrder:
@@ -103,6 +114,10 @@ const orderService = new OrderService();
  *         - order_type
  *         - items
  *       properties:
+ *         order_number:
+ *           type: string
+ *           description: Optional order number. If provided, will be used; otherwise auto-generated (e.g., KA000001)
+ *           example: "CUSTOM-001"
  *         client_name:
  *           type: string
  *         caterer:
@@ -124,8 +139,8 @@ const orderService = new OrderService();
  *           enum: [card, ACH]
  *         order_type:
  *           type: string
- *           enum: [QE, Serv, Hub]
- *           description: Type of order - QE (Quick Eats), Serv (Service), Hub
+ *           enum: [Inflight order, QE Serv Hub Order, Restaurant Pickup Order, inflight, qe_serv_hub, restaurant_pickup]
+ *           description: Order type - can use full name or alias (inflight, qe_serv_hub, restaurant_pickup)
  *         description:
  *           type: string
  *         notes:
@@ -158,6 +173,12 @@ const orderService = new OrderService();
  *                 type: string
  *               price:
  *                 type: number
+ *               category:
+ *                 type: string
+ *                 description: Item category (e.g., Appetizers, Main Course)
+ *               packaging:
+ *                 type: string
+ *                 description: Item packaging instructions
  *     CreateOrderFromRefs:
  *       type: object
  *       required:
@@ -171,12 +192,20 @@ const orderService = new OrderService();
  *         - order_type
  *         - items
  *       properties:
+ *         order_number:
+ *           type: string
+ *           description: Optional order number. If provided, will be used; otherwise auto-generated (e.g., KA000001)
+ *           example: "CUSTOM-001"
  *         client_id:
  *           type: integer
  *         caterer_id:
  *           type: integer
  *         airport_id:
  *           type: integer
+ *         fbo_id:
+ *           type: integer
+ *           description: Optional FBO ID to auto-fill FBO details
+ *           example: 1
  *         aircraft_tail_number:
  *           type: string
  *         delivery_date:
@@ -192,8 +221,8 @@ const orderService = new OrderService();
  *           enum: [card, ACH]
  *         order_type:
  *           type: string
- *           enum: [QE, Serv, Hub]
- *           description: Type of order - QE (Quick Eats), Serv (Service), Hub
+ *           enum: [Inflight order, QE Serv Hub Order, Restaurant Pickup Order, inflight, qe_serv_hub, restaurant_pickup]
+ *           description: Order type - can use full name or alias (inflight, qe_serv_hub, restaurant_pickup)
  *         description:
  *           type: string
  *         notes:
@@ -226,6 +255,12 @@ const orderService = new OrderService();
  *                 type: string
  *               price:
  *                 type: number
+ *               category:
+ *                 type: string
+ *                 description: Item category (e.g., Appetizers, Main Course)
+ *               packaging:
+ *                 type: string
+ *                 description: Item packaging (e.g., Foil container, Insulated box)
  */
 
 /**
@@ -242,13 +277,68 @@ const orderService = new OrderService();
  *             oneOf:
  *               - $ref: '#/components/schemas/CreateOrder'
  *               - $ref: '#/components/schemas/CreateOrderFromRefs'
+ *           examples:
+ *             basicOrder:
+ *               summary: Basic order with alias order type
+ *               value:
+ *                 client_name: "John Doe"
+ *                 caterer: "ABC Catering"
+ *                 airport: "Tampa International (TPA)"
+ *                 delivery_date: "2024-12-25"
+ *                 delivery_time: "14:30"
+ *                 order_priority: "normal"
+ *                 payment_method: "card"
+ *                 order_type: "inflight"
+ *                 items:
+ *                   - item_name: "Chicken Sandwich"
+ *                     portion_size: "1"
+ *                     price: 15.99
+ *                   - item_name: "Salad"
+ *                     portion_size: "1"
+ *                     price: 12.99
+ *                 delivery_fee: 5.00
+ *                 service_charge: 3.00
+ *             orderWithFBO:
+ *               summary: Order with FBO reference
+ *               value:
+ *                 client_id: 1
+ *                 caterer_id: 1
+ *                 airport_id: 1
+ *                 fbo_id: 1
+ *                 aircraft_tail_number: "N12345"
+ *                 delivery_date: "2024-12-25"
+ *                 delivery_time: "14:30"
+ *                 order_priority: "high"
+ *                 payment_method: "ACH"
+ *                 order_type: "qe_serv_hub"
+ *                 items:
+ *                   - item_id: 1
+ *                     portion_size: "2"
+ *                     price: 25.99
+ *                 notes: "Please deliver to gate A5"
+ *             restaurantPickup:
+ *               summary: Restaurant pickup order
+ *               value:
+ *                 client_name: "Jane Smith"
+ *                 caterer: "XYZ Restaurant"
+ *                 airport: "Miami International (MIA)"
+ *                 delivery_date: "2024-12-26"
+ *                 delivery_time: "18:00"
+ *                 order_priority: "normal"
+ *                 payment_method: "card"
+ *                 order_type: "restaurant_pickup"
+ *                 items:
+ *                   - item_name: "Pizza"
+ *                     portion_size: "1"
+ *                     price: 18.99
+ *                     item_description: "Large pepperoni pizza"
  *     responses:
  *       201:
  *         description: Order created successfully
  *       400:
  *         description: Validation error
  */
-orderRouter.post('/', async (req: Request, res: Response) => {
+orderRouter.post('/', requirePermission('orders.read'), async (req: Request, res: Response) => {
   try {
     const body = req.body as CreateOrderDTO | CreateOrderFromRefsDTO;
     const isReferencePayload = 'client_id' in body && 'caterer_id' in body && 'airport_id' in body;
@@ -310,7 +400,7 @@ orderRouter.post('/', async (req: Request, res: Response) => {
  *       500:
  *         description: Server error
  */
-orderRouter.get('/', async (req: Request, res: Response) => {
+orderRouter.get('/', requirePermission('orders.read'), async (req: Request, res: Response) => {
   try {
     const params: OrderSearchParams = {
       search: req.query.search as string,
@@ -350,7 +440,7 @@ orderRouter.get('/', async (req: Request, res: Response) => {
  *       404:
  *         description: Order not found
  */
-orderRouter.get('/:id', async (req: Request, res: Response) => {
+orderRouter.get('/:id', requirePermission('orders.read'), async (req: Request, res: Response) => {
   try {
     const id = parseInt(req.params.id);
     const order = await orderService.getOrderById(id);
@@ -391,6 +481,79 @@ orderRouter.get('/:id', async (req: Request, res: Response) => {
  *         application/json:
  *           schema:
  *             type: object
+ *             properties:
+ *               order_number:
+ *                 type: string
+ *                 description: Update the order number. Must be unique.
+ *                 example: "CUSTOM-002"
+ *               client_id:
+ *                 type: integer
+ *               caterer_id:
+ *                 type: integer
+ *               airport_id:
+ *                 type: integer
+ *               client_name:
+ *                 type: string
+ *               caterer:
+ *                 type: string
+ *               airport:
+ *                 type: string
+ *               fbo_id:
+ *                 type: integer
+ *                 nullable: true
+ *               aircraft_tail_number:
+ *                 type: string
+ *               delivery_date:
+ *                 type: string
+ *                 format: date
+ *               delivery_time:
+ *                 type: string
+ *               order_priority:
+ *                 type: string
+ *                 enum: [low, normal, high, urgent]
+ *               payment_method:
+ *                 type: string
+ *                 enum: [card, ACH]
+ *               status:
+ *                 type: string
+ *                 enum: [awaiting_quote, awaiting_client_approval, awaiting_caterer, caterer_confirmed, in_preparation, ready_for_delivery, delivered, paid, cancelled, order_changed]
+ *               order_type:
+ *                 type: string
+ *               description:
+ *                 type: string
+ *               notes:
+ *                 type: string
+ *               reheating_instructions:
+ *                 type: string
+ *               packaging_instructions:
+ *                 type: string
+ *               dietary_restrictions:
+ *                 type: string
+ *               delivery_fee:
+ *                 type: number
+ *               service_charge:
+ *                 type: number
+ *               items:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *                   properties:
+ *                     id:
+ *                       type: integer
+ *                     menu_item_id:
+ *                       type: integer
+ *                     item_name:
+ *                       type: string
+ *                     item_description:
+ *                       type: string
+ *                     portion_size:
+ *                       type: string
+ *                     price:
+ *                       type: number
+ *                     category:
+ *                       type: string
+ *                     packaging:
+ *                       type: string
  *     responses:
  *       200:
  *         description: Order updated successfully
@@ -399,7 +562,7 @@ orderRouter.get('/:id', async (req: Request, res: Response) => {
  *       404:
  *         description: Order not found
  */
-orderRouter.put('/:id', async (req: Request, res: Response) => {
+orderRouter.put('/:id', requirePermission('orders.update_status'), async (req: Request, res: Response) => {
   try {
     const id = parseInt(req.params.id);
     const orderData: UpdateOrderDTO = req.body;
@@ -455,10 +618,16 @@ orderRouter.put('/:id', async (req: Request, res: Response) => {
  *       404:
  *         description: Order not found
  */
-orderRouter.patch('/:id/status', async (req: Request, res: Response) => {
+orderRouter.patch('/:id/status', requirePermission('orders.update_status'), async (req: Request, res: Response) => {
   try {
     const id = parseInt(req.params.id);
     const statusData: OrderStatusUpdateDTO = req.body;
+    
+    // Only ADMIN can set status to 'paid'
+    if (statusData.status === 'paid' && req.user!.role !== 'ADMIN') {
+      return res.status(403).json({ error: 'Only administrators can set order status to paid' });
+    }
+    
     const order = await orderService.updateOrderStatus(id, statusData);
     if (!order) {
       Logger.warn('Order not found for status update', {
@@ -503,7 +672,7 @@ orderRouter.patch('/:id/status', async (req: Request, res: Response) => {
  *       404:
  *         description: Order not found
  */
-orderRouter.delete('/:id', async (req: Request, res: Response) => {
+orderRouter.delete('/:id', requireRole('ADMIN'), async (req: Request, res: Response) => {
   try {
     const id = parseInt(req.params.id);
     const deleted = await orderService.deleteOrder(id);
@@ -551,7 +720,7 @@ orderRouter.delete('/:id', async (req: Request, res: Response) => {
  *       400:
  *         description: Invalid request
  */
-orderRouter.delete('/', async (req: Request, res: Response) => {
+orderRouter.delete('/', requireRole('ADMIN'), async (req: Request, res: Response) => {
   try {
     const { ids } = req.body;
     if (!ids || !Array.isArray(ids) || ids.length === 0) {
@@ -587,7 +756,7 @@ orderRouter.delete('/', async (req: Request, res: Response) => {
  *       404:
  *         description: Order not found
  */
-orderRouter.get('/:id/preview', async (req: Request, res: Response) => {
+orderRouter.get('/:id/preview', requirePermission('orders.read'), async (req: Request, res: Response) => {
   try {
     const id = parseInt(req.params.id);
     const order = await orderService.getOrderById(id);
@@ -637,7 +806,7 @@ orderRouter.get('/:id/preview', async (req: Request, res: Response) => {
  *       404:
  *         description: Order not found
  */
-orderRouter.get('/:id/pdf', async (req: Request, res: Response) => {
+orderRouter.get('/:id/pdf', requirePermission('orders.read'), async (req: Request, res: Response) => {
   try {
     const id = parseInt(req.params.id);
     const regenerate = req.query.regenerate === 'true';
@@ -657,6 +826,101 @@ orderRouter.get('/:id/pdf', async (req: Request, res: Response) => {
     Logger.error('Failed to generate order PDF', error, {
       method: 'GET',
       url: `/orders/${req.params.id}/pdf`,
+      orderId: req.params.id,
+    });
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * @swagger
+ * /orders/{id}/preview-b:
+ *   get:
+ *     summary: Get HTML preview of order (PDF B format - Vendor PO / No Pricing)
+ *     description: Returns HTML preview for PDF B format - items grouped by category, no pricing information
+ *     tags: [Orders]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: HTML preview (PDF B format)
+ *       404:
+ *         description: Order not found
+ */
+orderRouter.get('/:id/preview-b', requirePermission('orders.read'), async (req: Request, res: Response) => {
+  try {
+    const id = parseInt(req.params.id);
+    const order = await orderService.getOrderById(id);
+    if (!order) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+
+    // Build absolute logo URL for frontend to fetch
+    const protocol = req.get('X-Forwarded-Proto') || req.protocol;
+    const host = req.get('X-Forwarded-Host') || req.get('host');
+    const logoUrl = `${protocol}://${host}/assets/logo.png`;
+    
+    // Pass logo URL to HTML generator
+    const orderWithLogo = { ...order, _logoUrl: logoUrl };
+    const html = generateOrderHTMLB(orderWithLogo);
+    res.json({ html, order_number: order.order_number, order, logoUrl });
+  } catch (error: any) {
+    Logger.error('Failed to generate order preview B', error, {
+      method: 'GET',
+      url: `/orders/${req.params.id}/preview-b`,
+      orderId: req.params.id,
+    });
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * @swagger
+ * /orders/{id}/pdf-b:
+ *   get:
+ *     summary: Download order as PDF B (Vendor PO / No Pricing)
+ *     description: Returns PDF B format - items grouped by category, no pricing information. Used for vendor purchase orders.
+ *     tags: [Orders]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *       - in: query
+ *         name: download
+ *         schema:
+ *           type: boolean
+ *         description: "Force download (default: true)"
+ *     responses:
+ *       200:
+ *         description: PDF file (B format)
+ *       404:
+ *         description: Order not found
+ */
+orderRouter.get('/:id/pdf-b', requirePermission('orders.read'), async (req: Request, res: Response) => {
+  try {
+    const id = parseInt(req.params.id);
+    const pdf = await orderService.getOrCreateOrderPdfB(id);
+    
+    const download = req.query.download !== 'false';
+    const filename = pdf.filename;
+
+    res.setHeader('Content-Type', pdf.mimeType);
+    res.setHeader(
+      'Content-Disposition',
+      download ? `attachment; filename=${filename}` : `inline; filename=${filename}`
+    );
+
+    res.end(pdf.buffer);
+  } catch (error: any) {
+    Logger.error('Failed to generate order PDF B', error, {
+      method: 'GET',
+      url: `/orders/${req.params.id}/pdf-b`,
       orderId: req.params.id,
     });
     res.status(500).json({ error: error.message });
@@ -686,9 +950,17 @@ orderRouter.get('/:id/pdf', async (req: Request, res: Response) => {
  *               custom_message:
  *                 type: string
  *                 description: Optional custom message to override the default template
- *               update_status:
- *                 type: boolean
- *                 description: If true, automatically update status to quote_sent when current status is awaiting_quote
+ *               custom_subject:
+ *                 type: string
+ *                 description: Optional custom subject to override the default subject
+ *               purpose:
+ *                 type: string
+ *                 enum: [quote, confirmation, delivery, invoice, update, cancellation]
+ *                 description: Override the email purpose (affects subject and PDF format)
+ *               pdf_format:
+ *                 type: string
+ *                 enum: [A, B]
+ *                 description: Override PDF format (A=with pricing, B=without pricing)
  *     responses:
  *       200:
  *         description: Email sent successfully
@@ -697,7 +969,7 @@ orderRouter.get('/:id/pdf', async (req: Request, res: Response) => {
  *       404:
  *         description: Order not found
  */
-orderRouter.post('/:id/send-to-client', async (req: Request, res: Response) => {
+orderRouter.post('/:id/send-to-client', requirePermission('orders.read'), async (req: Request, res: Response) => {
   try {
     const id = parseInt(req.params.id);
     let order = await orderService.getOrderById(id);
@@ -719,49 +991,67 @@ orderRouter.post('/:id/send-to-client', async (req: Request, res: Response) => {
     // Get client first name for personalization
     const clientFirstName = order.client?.full_name?.split(' ')[0] || 'Valued Customer';
 
-    // Get template based on order status
+    // Get template based on order status (includes purpose and pdfFormat)
     const template = emailService.getTemplate('client', order.status || 'default');
-    const subject = template.subject(order.order_number || '');
+    
+    // Allow override of purpose via request body (e.g., to send invoice)
+    const purpose = req.body.purpose || template.purpose;
+    const pdfFormat = req.body.pdf_format || template.pdfFormat;
+    
+    // Only ADMIN can send final invoice (when status is paid or purpose is invoice)
+    const isInvoice = order.status === 'paid' || purpose === 'invoice';
+    if (isInvoice && req.user!.role !== 'ADMIN') {
+      return res.status(403).json({ error: 'Only administrators can send final invoice emails' });
+    }
+    
+    // Get airport code for subject line
+    const airportCode = order.airport_details?.airport_code_iata || 
+      order.airport_details?.airport_code_icao || 
+      (order.airport && order.airport.length <= 10 ? order.airport : '') || 
+      '';
+    
+    // Get subject using the new format (pass status for special handling)
+    const subject = req.body.custom_subject || emailService.getSubject(order.order_number || '', 'client', purpose, airportCode, order.status);
     const body = req.body.custom_message || template.body(clientFirstName);
 
     // Generate HTML email
     const html = emailService.generateEmailHTML(body, order.order_number || '');
 
-    // Get PDF attachment
-    const pdfResult = await orderService.getOrCreateOrderPdf(id);
+    // For delivered status, don't attach PDF
+    const attachments = [];
+    if (order.status !== 'delivered') {
+      // Get PDF attachment based on format (A = with pricing, B = without pricing)
+      const pdfResult = pdfFormat === 'B' 
+        ? await orderService.getOrCreateOrderPdfB(id)
+        : await orderService.getOrCreateOrderPdf(id);
+      
+      attachments.push({
+        filename: pdfResult.filename,
+        content: pdfResult.buffer,
+        contentType: 'application/pdf',
+      });
+    }
 
     // Send email
     const result = await emailService.sendEmail({
       to: clientEmail,
       subject,
       html,
-      attachments: [{
-        filename: pdfResult.filename,
-        content: pdfResult.buffer,
-        contentType: 'application/pdf',
-      }],
+      attachments: attachments.length > 0 ? attachments : undefined,
     });
 
     if (!result.success) {
       return res.status(500).json({ error: result.error });
     }
 
-    // Automatically update status from awaiting_quote to quote_sent if requested
-    let statusUpdated = false;
-    if (req.body.update_status !== false && order.status === 'awaiting_quote') {
-      const updatedOrder = await orderService.updateOrderStatus(id, { status: 'quote_sent' });
-      if (updatedOrder) {
-        order = updatedOrder;
-        statusUpdated = true;
-      }
-    }
 
     Logger.info('Email sent to client', {
       orderId: id,
       orderNumber: order.order_number,
       recipient: clientEmail,
       status: order.status,
-      statusUpdated,
+      pdfFormat,
+      purpose,
     });
 
     res.json({
@@ -769,7 +1059,8 @@ orderRouter.post('/:id/send-to-client', async (req: Request, res: Response) => {
       recipient: clientEmail,
       order_number: order.order_number,
       status: order.status,
-      status_updated: statusUpdated,
+      pdf_format: pdfFormat,
+      purpose,
       sent_at: new Date().toISOString(),
       messageId: result.messageId,
     });
@@ -806,9 +1097,16 @@ orderRouter.post('/:id/send-to-client', async (req: Request, res: Response) => {
  *               custom_message:
  *                 type: string
  *                 description: Optional custom message to override the default template
+ *               custom_subject:
+ *                 type: string
+ *                 description: Optional custom subject to override the default subject
+ *               purpose:
+ *                 type: string
+ *                 enum: [quote_request, order_request, update, cancellation]
+ *                 description: Override the email purpose (affects subject). Caterer always receives PDF B (no pricing)
  *               update_status:
  *                 type: string
- *                 enum: [awaiting_caterer, quote_sent, quote_approved, in_preparation, ready_for_delivery]
+ *                 enum: [awaiting_quote, awaiting_client_approval, awaiting_caterer, caterer_confirmed, in_preparation, ready_for_delivery, delivered, paid, cancelled, order_changed]
  *                 description: Optional new status to set after sending email
  *     responses:
  *       200:
@@ -818,7 +1116,7 @@ orderRouter.post('/:id/send-to-client', async (req: Request, res: Response) => {
  *       404:
  *         description: Order not found
  */
-orderRouter.post('/:id/send-to-caterer', async (req: Request, res: Response) => {
+orderRouter.post('/:id/send-to-caterer', requirePermission('orders.read'), async (req: Request, res: Response) => {
   try {
     const id = parseInt(req.params.id);
     let order = await orderService.getOrderById(id);
@@ -837,16 +1135,28 @@ orderRouter.post('/:id/send-to-caterer', async (req: Request, res: Response) => 
       return res.status(400).json({ error: 'No email address found for caterer' });
     }
 
-    // Get template based on order status
+    // Get template based on order status (includes purpose and pdfFormat)
     const template = emailService.getTemplate('caterer', order.status || 'default');
-    const subject = template.subject(order.order_number || '');
+    
+    // Caterer always gets PDF B (no pricing)
+    const purpose = req.body.purpose || template.purpose;
+    const pdfFormat = 'B'; // Always PDF B for caterer
+    
+    // Get airport code for subject line
+    const airportCode = order.airport_details?.airport_code_iata || 
+      order.airport_details?.airport_code_icao || 
+      (order.airport && order.airport.length <= 10 ? order.airport : '') || 
+      '';
+    
+    // Get subject using the new format (pass status for special handling)
+    const subject = req.body.custom_subject || emailService.getSubject(order.order_number || '', 'caterer', purpose, airportCode, order.status);
     const body = req.body.custom_message || template.body('Team');
 
     // Generate HTML email
     const html = emailService.generateEmailHTML(body, order.order_number || '');
 
-    // Get PDF attachment
-    const pdfResult = await orderService.getOrCreateOrderPdf(id);
+    // Caterer always gets PDF B (without pricing)
+    const pdfResult = await orderService.getOrCreateOrderPdfB(id);
 
     // Send email
     const result = await emailService.sendEmail({
@@ -867,8 +1177,13 @@ orderRouter.post('/:id/send-to-caterer', async (req: Request, res: Response) => 
     // Update status if requested
     let statusUpdated = false;
     if (req.body.update_status) {
-      const validStatuses = ['awaiting_caterer', 'quote_sent', 'quote_approved', 'in_preparation', 'ready_for_delivery'];
+      const validStatuses = ['awaiting_quote', 'awaiting_client_approval', 'awaiting_caterer', 'caterer_confirmed', 'in_preparation', 'ready_for_delivery', 'delivered', 'paid', 'cancelled', 'order_changed'];
       if (validStatuses.includes(req.body.update_status)) {
+        // Only ADMIN can set status to 'paid'
+        if (req.body.update_status === 'paid' && req.user!.role !== 'ADMIN') {
+          return res.status(403).json({ error: 'Only administrators can set order status to paid' });
+        }
+        
         const updatedOrder = await orderService.updateOrderStatus(id, { status: req.body.update_status });
         if (updatedOrder) {
           order = updatedOrder;
@@ -883,6 +1198,8 @@ orderRouter.post('/:id/send-to-caterer', async (req: Request, res: Response) => 
       recipient: catererEmail,
       status: order.status,
       statusUpdated,
+      pdfFormat,
+      purpose,
     });
 
     res.json({
@@ -891,6 +1208,8 @@ orderRouter.post('/:id/send-to-caterer', async (req: Request, res: Response) => 
       order_number: order.order_number,
       status: order.status,
       status_updated: statusUpdated,
+      pdf_format: pdfFormat,
+      purpose,
       sent_at: new Date().toISOString(),
       messageId: result.messageId,
     });
@@ -930,9 +1249,6 @@ orderRouter.post('/:id/send-to-caterer', async (req: Request, res: Response) => 
  *               custom_caterer_message:
  *                 type: string
  *                 description: Optional custom message for caterer email
- *               update_status:
- *                 type: boolean
- *                 description: If true, automatically update status to quote_sent when current status is awaiting_quote
  *     responses:
  *       200:
  *         description: Emails sent successfully
@@ -941,7 +1257,7 @@ orderRouter.post('/:id/send-to-caterer', async (req: Request, res: Response) => 
  *       404:
  *         description: Order not found
  */
-orderRouter.post('/:id/send-to-both', async (req: Request, res: Response) => {
+orderRouter.post('/:id/send-to-both', requirePermission('orders.read'), async (req: Request, res: Response) => {
   try {
     const id = parseInt(req.params.id);
     let order = await orderService.getOrderById(id);
@@ -966,13 +1282,9 @@ orderRouter.post('/:id/send-to-both', async (req: Request, res: Response) => {
       return res.status(400).json({ error: errors.join('; ') });
     }
 
-    // Get PDF attachment (generate once, use for both)
-    const pdfResult = await orderService.getOrCreateOrderPdf(id);
-    const attachment = {
-      filename: pdfResult.filename,
-      content: pdfResult.buffer,
-      contentType: 'application/pdf',
-    };
+    // Get both PDF formats
+    const pdfA = await orderService.getOrCreateOrderPdf(id); // With pricing
+    const pdfB = await orderService.getOrCreateOrderPdfB(id); // Without pricing
 
     const results: any = {
       client: null,
@@ -983,15 +1295,33 @@ orderRouter.post('/:id/send-to-both', async (req: Request, res: Response) => {
     if (clientEmail) {
       const clientFirstName = order.client?.full_name?.split(' ')[0] || 'Valued Customer';
       const clientTemplate = emailService.getTemplate('client', order.status || 'default');
-      const clientSubject = clientTemplate.subject(order.order_number || '');
+      
+      // Use template's purpose and pdfFormat
+      const clientPurpose = req.body.client_purpose || clientTemplate.purpose;
+      
+      // Only ADMIN can send final invoice
+      const isInvoice = order.status === 'paid' || clientPurpose === 'invoice';
+      if (isInvoice && req.user!.role !== 'ADMIN') {
+        return res.status(403).json({ error: 'Only administrators can send final invoice emails' });
+      }
+      
+      const clientPdfFormat = clientTemplate.pdfFormat;
+      const clientSubject = req.body.custom_client_subject || emailService.getSubject(order.order_number || '', 'client', clientPurpose);
       const clientBody = req.body.custom_client_message || clientTemplate.body(clientFirstName);
       const clientHtml = emailService.generateEmailHTML(clientBody, order.order_number || '');
+      
+      // Use appropriate PDF format for client
+      const clientPdf = clientPdfFormat === 'B' ? pdfB : pdfA;
 
       const clientResult = await emailService.sendEmail({
         to: clientEmail,
         subject: clientSubject,
         html: clientHtml,
-        attachments: [attachment],
+        attachments: [{
+          filename: clientPdf.filename,
+          content: clientPdf.buffer,
+          contentType: 'application/pdf',
+        }],
       });
 
       results.client = {
@@ -999,13 +1329,16 @@ orderRouter.post('/:id/send-to-both', async (req: Request, res: Response) => {
         email: clientEmail,
         messageId: clientResult.messageId,
         error: clientResult.error,
+        pdf_format: clientPdfFormat,
+        purpose: clientPurpose,
       };
     }
 
-    // Send to caterer if email available
+    // Send to caterer if email available (always PDF B - no pricing)
     if (catererEmail) {
       const catererTemplate = emailService.getTemplate('caterer', order.status || 'default');
-      const catererSubject = catererTemplate.subject(order.order_number || '');
+      const catererPurpose = req.body.caterer_purpose || catererTemplate.purpose;
+      const catererSubject = req.body.custom_caterer_subject || emailService.getSubject(order.order_number || '', 'caterer', catererPurpose);
       const catererBody = req.body.custom_caterer_message || catererTemplate.body('Team');
       const catererHtml = emailService.generateEmailHTML(catererBody, order.order_number || '');
 
@@ -1013,7 +1346,11 @@ orderRouter.post('/:id/send-to-both', async (req: Request, res: Response) => {
         to: catererEmail,
         subject: catererSubject,
         html: catererHtml,
-        attachments: [attachment],
+        attachments: [{
+          filename: pdfB.filename,
+          content: pdfB.buffer,
+          contentType: 'application/pdf',
+        }],
       });
 
       results.caterer = {
@@ -1021,22 +1358,9 @@ orderRouter.post('/:id/send-to-both', async (req: Request, res: Response) => {
         email: catererEmail,
         messageId: catererResult.messageId,
         error: catererResult.error,
+        pdf_format: 'B',
+        purpose: catererPurpose,
       };
-    }
-
-    // Automatically update status from awaiting_quote to quote_sent if requested
-    let statusUpdated = false;
-    if (req.body.update_status !== false && order.status === 'awaiting_quote') {
-      // Only update if at least one email was sent successfully
-      const clientSuccess = results.client?.success;
-      const catererSuccess = results.caterer?.success;
-      if (clientSuccess || catererSuccess) {
-        const updatedOrder = await orderService.updateOrderStatus(id, { status: 'quote_sent' });
-        if (updatedOrder) {
-          order = updatedOrder;
-          statusUpdated = true;
-        }
-      }
     }
 
     Logger.info('Emails sent to both client and caterer', {
@@ -1045,14 +1369,12 @@ orderRouter.post('/:id/send-to-both', async (req: Request, res: Response) => {
       clientEmail,
       catererEmail,
       status: order.status,
-      statusUpdated,
     });
 
     res.json({
       message: 'Emails processed',
       order_number: order.order_number,
       status: order.status,
-      status_updated: statusUpdated,
       sent_at: new Date().toISOString(),
       results,
     });
@@ -1119,7 +1441,7 @@ orderRouter.post('/:id/send-to-both', async (req: Request, res: Response) => {
  *       200:
  *         description: Order history
  */
-orderRouter.get('/history', async (req: Request, res: Response) => {
+orderRouter.get('/history', requirePermission('orders.read'), async (req: Request, res: Response) => {
   try {
     const params: OrderSearchParams = {
       search: req.query.search as string,

@@ -1,5 +1,6 @@
 import express, { Express, Request, Response, NextFunction } from 'express';
 import cors from 'cors';
+import cookieParser from 'cookie-parser';
 import swaggerUi from 'swagger-ui-express';
 import dotenv from 'dotenv';
 import path from 'path';
@@ -7,6 +8,7 @@ import { setupSwagger } from './config/swagger';
 import { initializeDatabase } from './database';
 import { requestLogger, errorLogger } from './middleware/logger.middleware';
 import { Logger } from './utils/logger';
+import { env } from './config/env';
 
 dotenv.config();
 
@@ -16,8 +18,38 @@ const PORT = process.env.PORT || 3000;
 // Request logging middleware (must be before other middleware)
 app.use(requestLogger);
 
+// CORS configuration with credentials support
+const corsOptions = {
+  origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) {
+      return callback(null, true);
+    }
+    
+    // Allowed origins
+    const allowedOrigins = [
+      env.FRONTEND_URL,
+      'http://localhost:3000',
+      'http://localhost:3002',
+      'http://127.0.0.1:3000',
+      'http://127.0.0.1:3002',
+    ];
+    
+    // Check if origin matches allowed origins
+    if (allowedOrigins.includes(origin) || origin.startsWith(env.FRONTEND_URL)) {
+      return callback(null, true);
+    }
+    
+    callback(new Error('Not allowed by CORS'));
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+};
+
 // Middleware
-app.use(cors());
+app.use(cors(corsOptions));
+app.use(cookieParser());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -32,6 +64,9 @@ async function startServer() {
 
     // Load routes after database is ready to avoid premature repository access
     const { healthRouter } = await import('./routes/health');
+    const { authRouter } = await import('./routes/auth');
+    const { invitesRouter } = await import('./routes/invites');
+    const { employeesRouter } = await import('./routes/employees');
     const { airportRouter } = await import('./routes/airports');
     const { catererRouter } = await import('./routes/caterers');
     const { clientRouter } = await import('./routes/clients');
@@ -41,6 +76,7 @@ async function startServer() {
     const { addonItemRouter } = await import('./routes/addon-items');
     const { inventoryRouter } = await import('./routes/inventory');
     const { taxChargeRouter } = await import('./routes/tax-charges');
+    const { fboRouter } = await import('./routes/fbos');
 
     // Swagger Documentation
     const swaggerSpec = setupSwagger();
@@ -50,8 +86,13 @@ async function startServer() {
     });
     app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
-    // Routes
+    // Public routes (no auth required)
     app.use('/health', healthRouter);
+    app.use('/auth', authRouter);
+    app.use('/invites', invitesRouter);
+    
+    // Protected routes (require authentication)
+    app.use('/employees', employeesRouter);
     app.use('/airports', airportRouter);
     app.use('/caterers', catererRouter);
     app.use('/clients', clientRouter);
@@ -61,6 +102,7 @@ async function startServer() {
     app.use('/addon-items', addonItemRouter);
     app.use('/inventory', inventoryRouter);
     app.use('/tax-charges', taxChargeRouter);
+    app.use('/fbos', fboRouter);
 
     // Root endpoint
     app.get('/', (req: Request, res: Response) => {
@@ -76,7 +118,8 @@ async function startServer() {
         categories: '/categories',
         addonItems: '/addon-items',
         inventory: '/inventory',
-        taxCharges: '/tax-charges'
+        taxCharges: '/tax-charges',
+        fbos: '/fbos'
       });
     });
 
@@ -98,6 +141,14 @@ async function startServer() {
       });
     });
     
+    // Initialize order status scheduler
+    const { OrderService } = await import('./services/order.service');
+    const { getOrderScheduler } = await import('./services/order-scheduler.service');
+    const orderService = new OrderService();
+    const scheduler = getOrderScheduler(orderService);
+    scheduler.start();
+    Logger.info('Order status scheduler started');
+
     app.listen(PORT, () => {
       console.log(`Server is running on http://localhost:${PORT}`);
       console.log(`Swagger documentation available at http://localhost:${PORT}/api-docs`);

@@ -4,6 +4,8 @@ import * as path from 'path';
 import { Logger } from '../utils/logger';
 
 export type EmailRecipient = 'client' | 'caterer' | 'both';
+export type EmailPurpose = 'quote' | 'confirmation' | 'delivery' | 'invoice' | 'order_request' | 'quote_request' | 'update' | 'cancellation';
+export type PDFFormat = 'A' | 'B';
 
 export interface EmailOptions {
   to: string | string[];
@@ -16,12 +18,151 @@ export interface EmailOptions {
   }>;
 }
 
+/**
+ * Get the appropriate PDF format based on recipient and purpose
+ * PDF A = With pricing (for client quotes and invoices)
+ * PDF B = Without pricing (for caterers and client confirmations)
+ */
+export function getPDFFormat(recipient: EmailRecipient, purpose: EmailPurpose): PDFFormat {
+  // Caterer always gets PDF B (no pricing)
+  if (recipient === 'caterer') {
+    return 'B';
+  }
+  
+  // Client emails
+  switch (purpose) {
+    case 'quote':
+    case 'invoice':
+      return 'A'; // With pricing
+    case 'confirmation':
+    case 'delivery':
+    case 'update':
+      return 'B'; // Without pricing
+    default:
+      return 'A';
+  }
+}
+
+/**
+ * Get email subject based on recipient and purpose
+ */
+export function getEmailSubject(orderNumber: string, recipient: EmailRecipient, purpose: EmailPurpose, airportCode?: string, status?: string): string {
+  const displayNum = orderNumber;
+  
+  if (recipient === 'caterer') {
+    // Special handling for awaiting_caterer status
+    if (status === 'awaiting_caterer') {
+      const airportPart = airportCode ? ` / ${airportCode}` : '';
+      return `Kabin247 Order#${displayNum}${airportPart} / Confirmation Request`;
+    }
+    
+    switch (purpose) {
+      case 'quote_request':
+        const airportPart = airportCode ? ` / ${airportCode}` : '';
+        return `Kabin247 Order#${displayNum}${airportPart} / Quote Request- This Order Is Not Live!`;
+      case 'order_request':
+      case 'confirmation':
+        return `Kabin247 Order Request#${displayNum}`;
+      case 'cancellation':
+        return `Kabin247 Cancellation#${displayNum}`;
+      case 'update':
+      default:
+        return `Kabin247 Order Update#${displayNum}`;
+    }
+  }
+  
+  // Client emails
+  // Special handling for awaiting_client_approval status
+  if (status === 'awaiting_client_approval') {
+    const airportPart = airportCode ? ` / ${airportCode}` : '';
+    return `Kabin247 Order#${displayNum}${airportPart} / Order Estimate - This Order Is Not Live`;
+  }
+  
+  // Special handling for caterer_confirmed status
+  if (status === 'caterer_confirmed') {
+    const airportPart = airportCode ? ` / ${airportCode}` : '';
+    return `Kabin247 Order#${displayNum}${airportPart} / Order Confirmed`;
+  }
+  
+  // Special handling for delivered status
+  if (status === 'delivered') {
+    const airportPart = airportCode ? ` / ${airportCode}` : '';
+    return `Kabin247 Order#${displayNum}${airportPart} / Delivery Completed`;
+  }
+  
+  // Special handling for paid status
+  if (status === 'paid') {
+    return `Kabin247 Ord#${displayNum} Final Invoice`;
+  }
+  
+  switch (purpose) {
+    case 'quote':
+      return `Kabin247 Quote#${displayNum}`;
+    case 'confirmation':
+      return `Kabin247 Conf#${displayNum}`;
+    case 'delivery':
+      return `Kabin247 Delivery Update#${displayNum}`;
+    case 'invoice':
+      return `Kabin247 Invoice#${displayNum}`;
+    case 'update':
+      return `Kabin247 Order Update#${displayNum}`;
+    case 'cancellation':
+      return `Kabin247 Cancellation#${displayNum}`;
+    default:
+      return `Kabin247 Order#${displayNum}`;
+  }
+}
+
+/**
+ * Determine email purpose from order status
+ */
+export function getEmailPurposeFromStatus(status: string, recipient: EmailRecipient): EmailPurpose {
+  if (recipient === 'caterer') {
+    switch (status) {
+      case 'awaiting_quote':
+      case 'awaiting_caterer':
+        return 'quote_request';
+      case 'caterer_confirmed':
+        return 'order_request';
+      case 'cancelled':
+        return 'cancellation';
+      case 'order_changed':
+        return 'update';
+      default:
+        return 'update';
+    }
+  }
+  
+  // Client
+  switch (status) {
+    case 'awaiting_quote':
+    case 'awaiting_client_approval':
+      return 'quote';
+    case 'caterer_confirmed':
+    case 'in_preparation':
+    case 'ready_for_delivery':
+      return 'confirmation';
+    case 'delivered':
+      return 'delivery';
+    case 'paid':
+      return 'invoice';
+    case 'cancelled':
+      return 'cancellation';
+    case 'order_changed':
+      return 'update';
+    default:
+      return 'update';
+  }
+}
+
 // Email templates based on order status and recipient type
+// Note: Subject is now generated via getEmailSubject() for consistency
 export const EMAIL_TEMPLATES = {
   // Client notifications
   client: {
     awaiting_quote: {
-      subject: (orderNumber: string) => `Order Estimate - ${orderNumber}`,
+      purpose: 'quote' as EmailPurpose,
+      pdfFormat: 'A' as PDFFormat,
       body: (clientFirstName: string) => `
 Dear ${clientFirstName},
 
@@ -34,37 +175,24 @@ Kabin247 Inflight Support
 One point of contact for your global inflight needs.
       `.trim(),
     },
-    quote_sent: {
-      subject: (orderNumber: string) => `Order Estimate - ${orderNumber}`,
+    awaiting_client_approval: {
+      purpose: 'quote' as EmailPurpose,
+      pdfFormat: 'A' as PDFFormat,
       body: (clientFirstName: string) => `
 Dear ${clientFirstName},
 
-Thank you for considering us to manage your order. Please find order estimate attached.
+Please find detailed quote attached.
 
 Kindly advise if we may confirm this request?
 
-Sincerely,
-Kabin247 Inflight Support
-One point of contact for your global inflight needs.
-      `.trim(),
-    },
-    quote_approved: {
-      subject: (orderNumber: string) => `Order Confirmation - ${orderNumber}`,
-      body: (clientFirstName: string) => `
-Dear ${clientFirstName},
+Blue Skies,
 
-Thank you for allowing us to manage your inflight provisioning request. Your order/and or update has been confirmed.
-
-Kindly review the attached confirmation and advise if any discrepancies.
-Here if you have any questions.
-
-Sincerely,
-Kabin247 Inflight Support
-One point of contact for your global inflight needs.
+The Kabin247 Concierge Team!
       `.trim(),
     },
     in_preparation: {
-      subject: (orderNumber: string) => `Order Confirmation - ${orderNumber}`,
+      purpose: 'confirmation' as EmailPurpose,
+      pdfFormat: 'B' as PDFFormat,
       body: (clientFirstName: string) => `
 Dear ${clientFirstName},
 
@@ -79,7 +207,8 @@ One point of contact for your global inflight needs.
       `.trim(),
     },
     ready_for_delivery: {
-      subject: (orderNumber: string) => `Order Confirmation - ${orderNumber}`,
+      purpose: 'confirmation' as EmailPurpose,
+      pdfFormat: 'B' as PDFFormat,
       body: (clientFirstName: string) => `
 Dear ${clientFirstName},
 
@@ -94,22 +223,40 @@ One point of contact for your global inflight needs.
       `.trim(),
     },
     delivered: {
-      subject: (orderNumber: string) => `Delivery Notification - ${orderNumber}`,
+      purpose: 'delivery' as EmailPurpose,
+      pdfFormat: 'B' as PDFFormat,
       body: (clientFirstName: string) => `
 Dear ${clientFirstName},
 
-Thank you for allowing us to manage your inflight provisioning request. Your order has been delivered.
+Your order has been delivered.
 
-We look forward to working with you again soon.
+Thank you for allowing us to manage your inflight request. We look forward to working with you again soon.
+
 Here if you have any questions.
 
-Sincerely,
-Kabin247 Inflight Support
-One point of contact for your global inflight needs.
+Blue Skies,
+
+The Kabin247 Concierge Team!
+      `.trim(),
+    },
+    paid: {
+      purpose: 'invoice' as EmailPurpose,
+      pdfFormat: 'A' as PDFFormat,
+      body: (clientFirstName: string) => `
+Dear ${clientFirstName},
+
+Please find detailed invoice attached.
+
+Your continued support is very much appreciated. Here if you have any questions.
+
+Blue Skies,
+
+The Kabin247 Concierge Team!
       `.trim(),
     },
     cancelled: {
-      subject: (orderNumber: string) => `Order Cancelled - ${orderNumber}`,
+      purpose: 'cancellation' as EmailPurpose,
+      pdfFormat: 'B' as PDFFormat,
       body: (clientFirstName: string) => `
 Dear ${clientFirstName},
 
@@ -123,9 +270,58 @@ Kabin247 Inflight Support
 One point of contact for your global inflight needs.
       `.trim(),
     },
+    order_changed: {
+      purpose: 'update' as EmailPurpose,
+      pdfFormat: 'B' as PDFFormat,
+      body: (clientFirstName: string) => `
+Dear ${clientFirstName},
+
+Your order has been updated. Please find the attached updated order details.
+
+Kindly review and advise if any discrepancies.
+Here if you have any questions.
+
+Sincerely,
+Kabin247 Inflight Support
+One point of contact for your global inflight needs.
+      `.trim(),
+    },
+    caterer_confirmed: {
+      purpose: 'confirmation' as EmailPurpose,
+      pdfFormat: 'B' as PDFFormat,
+      body: (clientFirstName: string) => `
+Dear ${clientFirstName},
+
+Your order and/or update has been confirmed. Please find detailed confirmation attached.
+
+Here if you have any questions.
+
+Blue Skies,
+
+The Kabin247 Concierge Team!
+      `.trim(),
+    },
+    // Special purpose templates
+    invoice: {
+      purpose: 'invoice' as EmailPurpose,
+      pdfFormat: 'A' as PDFFormat,
+      body: (clientFirstName: string) => `
+Dear ${clientFirstName},
+
+Please find attached the invoice for your recent order.
+
+Kindly submit payment for the above invoice at your earliest convenience.
+Here if you have any questions.
+
+Sincerely,
+Kabin247 Inflight Support
+One point of contact for your global inflight needs.
+      `.trim(),
+    },
     // Default template for any other status
     default: {
-      subject: (orderNumber: string) => `Order Update - ${orderNumber}`,
+      purpose: 'update' as EmailPurpose,
+      pdfFormat: 'B' as PDFFormat,
       body: (clientFirstName: string) => `
 Dear ${clientFirstName},
 
@@ -140,58 +336,45 @@ One point of contact for your global inflight needs.
     },
   },
 
-  // Caterer/Vendor notifications
+  // Caterer/Vendor notifications (always PDF B - no pricing)
   caterer: {
     awaiting_quote: {
-      subject: (orderNumber: string) => `New Order Request - ${orderNumber}`,
+      purpose: 'quote_request' as EmailPurpose,
+      pdfFormat: 'B' as PDFFormat,
       body: () => `
 Dear Team,
 
-Thank you for considering our order. Kindly advise if able to accommodate the attached request?
+Kindly asking your estimate for the attached order. Our client would love to review for approval and confirmation.
 
-Here if you have any questions.
+Please send at your earliest convenience.
 
-Sincerely,
-Kabin247 Inflight Support
-One point of contact for your global inflight needs.
+Kind regards,
+
+The Kabin247 Concierge Team!
       `.trim(),
     },
     awaiting_caterer: {
-      subject: (orderNumber: string) => `New Order Request - ${orderNumber}`,
+      purpose: 'quote_request' as EmailPurpose,
+      pdfFormat: 'B' as PDFFormat,
       body: () => `
 Dear Team,
 
-Thank you for considering our order. Kindly advise if able to accommodate the attached request?
+Please find order details attached.
 
-Here if you have any questions.
+We look forward to your confirmation.
 
-Sincerely,
-Kabin247 Inflight Support
-One point of contact for your global inflight needs.
+Kind regards,
+
+The Kabin247 Concierge Team!
       `.trim(),
     },
-    quote_sent: {
-      subject: (orderNumber: string) => `Order Update - ${orderNumber}`,
+    caterer_confirmed: {
+      purpose: 'order_request' as EmailPurpose,
+      pdfFormat: 'B' as PDFFormat,
       body: () => `
 Dear Team,
 
-Kindly review the attached request for details of the changes requested.
-Items Highlighted for your convenience.
-
-Here if you have any questions.
-
-Sincerely,
-Kabin247 Inflight Support
-One point of contact for your global inflight needs.
-      `.trim(),
-    },
-    quote_approved: {
-      subject: (orderNumber: string) => `Order Confirmed - ${orderNumber}`,
-      body: () => `
-Dear Team,
-
-Kindly review the attached request for details of the changes requested.
-Items Highlighted for your convenience.
+Thank you for confirming the order. Please proceed with preparation as per the attached details.
 
 Here if you have any questions.
 
@@ -201,7 +384,8 @@ One point of contact for your global inflight needs.
       `.trim(),
     },
     in_preparation: {
-      subject: (orderNumber: string) => `Order Update - ${orderNumber}`,
+      purpose: 'update' as EmailPurpose,
+      pdfFormat: 'B' as PDFFormat,
       body: () => `
 Dear Team,
 
@@ -216,7 +400,8 @@ One point of contact for your global inflight needs.
       `.trim(),
     },
     cancelled: {
-      subject: (orderNumber: string) => `Order Cancellation - ${orderNumber}`,
+      purpose: 'cancellation' as EmailPurpose,
+      pdfFormat: 'B' as PDFFormat,
       body: () => `
 Dear Team,
 
@@ -230,9 +415,41 @@ Kabin247 Inflight Support
 One point of contact for your global inflight needs.
       `.trim(),
     },
+    order_changed: {
+      purpose: 'update' as EmailPurpose,
+      pdfFormat: 'B' as PDFFormat,
+      body: () => `
+Dear Team,
+
+There has been an update to the order. Kindly review the attached request for details of the changes.
+
+Items highlighted for your convenience.
+Here if you have any questions.
+
+Sincerely,
+Kabin247 Inflight Support
+One point of contact for your global inflight needs.
+      `.trim(),
+    },
+    awaiting_client_approval: {
+      purpose: 'update' as EmailPurpose,
+      pdfFormat: 'B' as PDFFormat,
+      body: () => `
+Dear Team,
+
+The quote for this order has been sent to the client for approval. We will notify you once approval is received.
+
+Here if you have any questions.
+
+Sincerely,
+Kabin247 Inflight Support
+One point of contact for your global inflight needs.
+      `.trim(),
+    },
     // Default template for any other status
     default: {
-      subject: (orderNumber: string) => `Order Update - ${orderNumber}`,
+      purpose: 'update' as EmailPurpose,
+      pdfFormat: 'B' as PDFFormat,
       body: () => `
 Dear Team,
 
@@ -365,10 +582,17 @@ export class EmailService {
   getTemplate(
     recipientType: 'client' | 'caterer',
     status: string
-  ): { subject: (orderNumber: string) => string; body: (name: string) => string } {
+  ): { purpose: EmailPurpose; pdfFormat: PDFFormat; body: (name: string) => string } {
     const templates = EMAIL_TEMPLATES[recipientType];
     const template = (templates as any)[status] || templates.default;
     return template;
+  }
+
+  /**
+   * Get the email subject based on order number, recipient type and purpose
+   */
+  getSubject(orderNumber: string, recipientType: 'client' | 'caterer', purpose: EmailPurpose, airportCode?: string, status?: string): string {
+    return getEmailSubject(orderNumber, recipientType, purpose, airportCode, status);
   }
 
   /**
@@ -465,6 +689,64 @@ export class EmailService {
 </html>
     `.trim();
   }
+
+  /**
+   * Send invite email to employee
+   */
+  async sendInviteEmail(email: string, inviteLink: string): Promise<{ success: boolean; messageId?: string; error?: string }> {
+    const subject = 'Invitation to Join Kabin247';
+    const html = this.generateEmailHTML(`
+Dear Team Member,
+
+You have been invited to join the Kabin247 platform.
+
+Please click the link below to create your account:
+${inviteLink}
+
+This invitation link will expire in 14 days.
+
+If you did not expect this invitation, please ignore this email.
+
+Best regards,
+Kabin247 Team
+    `.trim(), 'INVITE', false);
+
+    return this.sendEmail({
+      to: email,
+      subject,
+      html,
+    });
+  }
+
+  /**
+   * Send password reset email with OTP
+   */
+  async sendPasswordResetEmail(email: string, otp: string, resetLink: string): Promise<{ success: boolean; messageId?: string; error?: string }> {
+    const subject = 'Password Reset - Kabin247';
+    const html = this.generateEmailHTML(`
+Dear Admin,
+
+You have requested to reset your password for Kabin247.
+
+Your OTP code is: ${otp}
+
+Alternatively, you can use this link to reset your password:
+${resetLink}
+
+This code will expire in 10 minutes.
+
+If you did not request a password reset, please ignore this email and ensure your account is secure.
+
+Best regards,
+Kabin247 Team
+    `.trim(), 'PASSWORD-RESET', false);
+
+    return this.sendEmail({
+      to: email,
+      subject,
+      html,
+    });
+  }
 }
 
 // Singleton instance
@@ -476,4 +758,3 @@ export function getEmailService(): EmailService {
   }
   return emailServiceInstance;
 }
-

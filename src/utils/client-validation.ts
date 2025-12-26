@@ -30,7 +30,13 @@ export function validateClient(data: CreateClientDTO): { valid: boolean; errors:
 export function normalizeClientData(data: CreateClientDTO): CreateClientDTO {
   const normalized: CreateClientDTO = {
     full_name: (data.full_name || '').trim(),
-    full_address: (data.full_address || '').trim(),
+    // Normalize address: replace newlines and multiple spaces with single space
+    full_address: (data.full_address || '')
+      .replace(/\r\n/g, ' ')  // Replace Windows line breaks
+      .replace(/\n/g, ' ')    // Replace Unix line breaks
+      .replace(/\r/g, ' ')    // Replace old Mac line breaks
+      .replace(/\s+/g, ' ')   // Replace multiple spaces with single space
+      .trim(),
     email: '',
   };
 

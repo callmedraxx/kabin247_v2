@@ -34,7 +34,6 @@ const upload = multer({
  *       type: object
  *       required:
  *         - airport_name
- *         - fbo_name
  *       properties:
  *         id:
  *           type: integer
@@ -42,16 +41,6 @@ const upload = multer({
  *         airport_name:
  *           type: string
  *           description: Name of the airport
- *         fbo_name:
- *           type: string
- *           description: Fixed Base Operator name
- *         fbo_email:
- *           type: string
- *           format: email
- *           description: FBO email address
- *         fbo_phone:
- *           type: string
- *           description: FBO phone number
  *         airport_code_iata:
  *           type: string
  *           pattern: '^[A-Z]{3}$'
@@ -72,16 +61,8 @@ const upload = multer({
  *       type: object
  *       required:
  *         - airport_name
- *         - fbo_name
  *       properties:
  *         airport_name:
- *           type: string
- *         fbo_name:
- *           type: string
- *         fbo_email:
- *           type: string
- *           format: email
- *         fbo_phone:
  *           type: string
  *         airport_code_iata:
  *           type: string
@@ -144,7 +125,7 @@ airportRouter.post('/', async (req: Request, res: Response) => {
  *         name: sortBy
  *         schema:
  *           type: string
- *           enum: [id, airport_name, fbo_name, airport_code_iata, airport_code_icao, created_at, updated_at]
+ *           enum: [id, airport_name, airport_code_iata, airport_code_icao, created_at, updated_at]
  *         description: Field to sort by
  *       - in: query
  *         name: sortOrder

@@ -1,4 +1,4 @@
-import { Order, OrderItem, OrderSearchParams, OrderListResponse, CreateOrderDTO, UpdateOrderDTO } from '../models/order';
+import { Order, OrderItem, OrderSearchParams, OrderListResponse, CreateOrderDTO, UpdateOrderDTO, getOrderTypeFromAlias, OrderType } from '../models/order';
 import { OrderRepository } from './order.repository';
 
 export class InMemoryOrderRepository implements OrderRepository {
@@ -9,10 +9,60 @@ export class InMemoryOrderRepository implements OrderRepository {
   private nextItemId: number = 1;
   private orderNumberCounter: number = 1;
 
-  async getNextOrderNumber(): Promise<string> {
-    const orderNumber = `KA${String(this.orderNumberCounter).padStart(6, '0')}`;
-    this.orderNumberCounter++;
-    return orderNumber;
+  async getNextOrderNumber(clientName: string): Promise<string> {
+    // Extract initials from client name (e.g., "Mark Savage" -> "MS", "Hannah Bush" -> "HB")
+    const getInitials = (name: string): string => {
+      if (!name || name.trim().length === 0) return 'XX';
+      const parts = name.trim().split(/\s+/);
+      if (parts.length === 1) {
+        // Single name - use first 2 letters
+        return parts[0].substring(0, 2).toUpperCase().padEnd(2, 'X');
+      }
+      // Multiple names - use first letter of first and last name
+      const firstInitial = parts[0].charAt(0).toUpperCase();
+      const lastInitial = parts[parts.length - 1].charAt(0).toUpperCase();
+      return `${firstInitial}${lastInitial}`;
+    };
+
+    const initials = getInitials(clientName);
+    const currentYear = new Date().getFullYear().toString().slice(-2); // Get last 2 digits (e.g., "25")
+
+    // Find the highest order number for the current year (regardless of client initials)
+    // Pattern: {INITIALS}{YEAR}{NUMBER} where NUMBER is a global counter per year
+    // Match orders that have the pattern: XX25NNN where XX is any 2 letters
+    const yearPattern = new RegExp(`^[A-Z]{2}${currentYear}\\d{2,}$`);
+    const matchingOrders = this.orders.filter(order => 
+      yearPattern.test(order.order_number)
+    );
+
+    if (matchingOrders.length === 0) {
+      // First order in this year
+      return `${initials}${currentYear}01`;
+    }
+
+    // Extract the numeric part from existing order numbers and find the max
+    // The year is always 2 digits, so we start from position 4 (after 2-letter initials + 2-digit year)
+    let maxSequence = 0;
+    for (const order of matchingOrders) {
+      const numericPart = order.order_number.substring(4);
+      const sequence = parseInt(numericPart) || 0;
+      if (sequence > maxSequence) {
+        maxSequence = sequence;
+      }
+    }
+
+    const nextSequence = maxSequence + 1;
+    
+    // Format: {INITIALS}{YEAR}{NUMBER} with number padded to at least 2 digits
+    // e.g., MS2501, HB2502, MS2503, ..., MS25619, HB25620
+    return `${initials}${currentYear}${String(nextSequence).padStart(2, '0')}`;
+  }
+
+  async orderNumberExists(orderNumber: string, excludeOrderId?: number): Promise<boolean> {
+    return this.orders.some(order => 
+      order.order_number === orderNumber && 
+      (excludeOrderId === undefined || order.id !== excludeOrderId)
+    );
   }
 
   async create(orderData: CreateOrderDTO, orderNumber: string): Promise<Order> {
@@ -24,9 +74,16 @@ export class InMemoryOrderRepository implements OrderRepository {
     const deliveryFee = orderData.delivery_fee || 0;
     const total = subtotal + serviceCharge + deliveryFee;
 
+    // Convert order_type alias to full type if needed
+    const orderType = getOrderTypeFromAlias(orderData.order_type as string) || (orderData.order_type as OrderType);
+
     const newOrder: Order = {
       id: this.nextId++,
       order_number: orderNumber,
+      client_id: orderData.client_id,
+      caterer_id: orderData.caterer_id,
+      airport_id: orderData.airport_id,
+      fbo_id: orderData.fbo_id,
       client_name: orderData.client_name,
       caterer: orderData.caterer,
       airport: orderData.airport,
@@ -35,7 +92,7 @@ export class InMemoryOrderRepository implements OrderRepository {
       delivery_time: orderData.delivery_time,
       order_priority: orderData.order_priority,
       payment_method: orderData.payment_method,
-      order_type: orderData.order_type,
+      order_type: orderType,
       status: 'awaiting_quote',
       description: orderData.description,
       notes: orderData.notes,
@@ -46,6 +103,7 @@ export class InMemoryOrderRepository implements OrderRepository {
       service_charge: serviceCharge,
       subtotal,
       total,
+      revision_count: 0,
       created_at: now,
       updated_at: now,
     };
@@ -60,6 +118,8 @@ export class InMemoryOrderRepository implements OrderRepository {
       item_description: item.item_description,
       portion_size: item.portion_size,
       price: item.price,
+      category: item.category,
+      packaging: item.packaging,
       sort_order: index,
     }));
 
@@ -170,14 +230,17 @@ export class InMemoryOrderRepository implements OrderRepository {
       // Delete existing items
       this.orderItems = this.orderItems.filter(item => item.order_id !== id);
       
-      // Create new items
+      // Create new items with category and packaging
       const newItems: OrderItem[] = orderData.items.map((item, idx) => ({
         id: this.nextItemId++,
         order_id: id,
+        menu_item_id: item.menu_item_id,
         item_name: item.item_name,
         item_description: item.item_description,
         portion_size: item.portion_size,
         price: item.price,
+        category: item.category,
+        packaging: item.packaging,
         sort_order: idx,
       }));
       this.orderItems.push(...newItems);
@@ -195,13 +258,34 @@ export class InMemoryOrderRepository implements OrderRepository {
 
     const total = subtotal + serviceCharge + deliveryFee;
 
+    // Convert order_type alias to full type if needed
+    let orderType = existingOrder.order_type;
+    if (orderData.order_type !== undefined) {
+      orderType = getOrderTypeFromAlias(orderData.order_type as string) || (orderData.order_type as OrderType);
+    }
+
+    // Clear cached PDF since order data has changed
+    this.orderPdfs.delete(id);
+
+    // Update reference IDs if provided
+    const client_id = orderData.client_id !== undefined ? orderData.client_id : existingOrder.client_id;
+    const caterer_id = orderData.caterer_id !== undefined ? orderData.caterer_id : existingOrder.caterer_id;
+    const airport_id = orderData.airport_id !== undefined ? orderData.airport_id : existingOrder.airport_id;
+    const fbo_id = orderData.fbo_id !== undefined ? orderData.fbo_id : existingOrder.fbo_id;
+
     this.orders[index] = {
       ...existingOrder,
       ...orderData,
+      client_id,
+      caterer_id,
+      airport_id,
+      fbo_id: fbo_id || undefined,
+      order_type: orderType,
       subtotal,
       service_charge: serviceCharge,
       delivery_fee: deliveryFee,
       total,
+      revision_count: (existingOrder.revision_count || 0) + 1,
       updated_at: new Date(),
     };
 

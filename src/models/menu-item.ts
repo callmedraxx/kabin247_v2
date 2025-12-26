@@ -4,6 +4,10 @@ export interface MenuItemVariant {
   portion_size: string;
   price: number;
   sort_order?: number;
+  caterer_prices?: Array<{
+    caterer_id: number;
+    price: number;
+  }>;
 }
 
 export interface MenuItem {
@@ -30,6 +34,10 @@ export interface CreateMenuItemDTO {
   variants?: Array<{
     portion_size: string;
     price: number;
+    caterer_prices?: Array<{
+      caterer_id: number;
+      price: number;
+    }>;
   }>;
   tax_rate?: number;
   service_charge?: number;
@@ -46,6 +54,10 @@ export interface UpdateMenuItemDTO {
     id?: number;
     portion_size: string;
     price: number;
+    caterer_prices?: Array<{
+      caterer_id: number;
+      price: number;
+    }>;
   }>;
   tax_rate?: number;
   service_charge?: number;

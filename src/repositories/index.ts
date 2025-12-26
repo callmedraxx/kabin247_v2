@@ -26,6 +26,17 @@ import { PostgreSQLInventoryRepository } from './postgresql-inventory.repository
 import { TaxChargeRepository } from './tax-charge.repository';
 import { InMemoryTaxChargeRepository } from './in-memory-tax-charge.repository';
 import { PostgreSQLTaxChargeRepository } from './postgresql-tax-charge.repository';
+import { FBORepository } from './fbo.repository';
+import { InMemoryFBORepository } from './in-memory-fbo.repository';
+import { PostgreSQLFBORepository } from './postgresql-fbo.repository';
+import { UserRepository } from './user.repository';
+import { PostgreSQLUserRepository } from './postgresql-user.repository';
+import { InviteRepository } from './invite.repository';
+import { PostgreSQLInviteRepository } from './postgresql-invite.repository';
+import { RefreshTokenRepository } from './refresh-token.repository';
+import { PostgreSQLRefreshTokenRepository } from './postgresql-refresh-token.repository';
+import { PasswordResetRepository } from './password-reset.repository';
+import { PostgreSQLPasswordResetRepository } from './postgresql-password-reset.repository';
 
 let airportRepository: AirportRepository | null = null;
 let catererRepository: CatererRepository | null = null;
@@ -36,6 +47,7 @@ let menuItemRepository: MenuItemRepository | null = null;
 let addonItemRepository: AddonItemRepository | null = null;
 let inventoryRepository: InventoryRepository | null = null;
 let taxChargeRepository: TaxChargeRepository | null = null;
+let fboRepository: FBORepository | null = null;
 
 export function getAirportRepository(): AirportRepository {
   if (!airportRepository) {
@@ -161,5 +173,80 @@ export function getTaxChargeRepository(): TaxChargeRepository {
     }
   }
   return taxChargeRepository;
+}
+
+export function getFBORepository(): FBORepository {
+  if (!fboRepository) {
+    const dbType = process.env.DB_TYPE || 'memory';
+    const nodeEnv = process.env.NODE_ENV || 'development';
+
+    if (dbType === 'memory' || (nodeEnv === 'development' && dbType !== 'postgres')) {
+      fboRepository = new InMemoryFBORepository();
+    } else {
+      fboRepository = new PostgreSQLFBORepository(getDatabase());
+    }
+  }
+  return fboRepository;
+}
+
+let userRepository: UserRepository | null = null;
+let inviteRepository: InviteRepository | null = null;
+let refreshTokenRepository: RefreshTokenRepository | null = null;
+let passwordResetRepository: PasswordResetRepository | null = null;
+
+export function getUserRepository(): UserRepository {
+  if (!userRepository) {
+    const dbType = process.env.DB_TYPE || 'memory';
+    const nodeEnv = process.env.NODE_ENV || 'development';
+
+    if (dbType === 'memory' || (nodeEnv === 'development' && dbType !== 'postgres')) {
+      throw new Error('User repository requires PostgreSQL');
+    } else {
+      userRepository = new PostgreSQLUserRepository(getDatabase());
+    }
+  }
+  return userRepository;
+}
+
+export function getInviteRepository(): InviteRepository {
+  if (!inviteRepository) {
+    const dbType = process.env.DB_TYPE || 'memory';
+    const nodeEnv = process.env.NODE_ENV || 'development';
+
+    if (dbType === 'memory' || (nodeEnv === 'development' && dbType !== 'postgres')) {
+      throw new Error('Invite repository requires PostgreSQL');
+    } else {
+      inviteRepository = new PostgreSQLInviteRepository(getDatabase());
+    }
+  }
+  return inviteRepository;
+}
+
+export function getRefreshTokenRepository(): RefreshTokenRepository {
+  if (!refreshTokenRepository) {
+    const dbType = process.env.DB_TYPE || 'memory';
+    const nodeEnv = process.env.NODE_ENV || 'development';
+
+    if (dbType === 'memory' || (nodeEnv === 'development' && dbType !== 'postgres')) {
+      throw new Error('Refresh token repository requires PostgreSQL');
+    } else {
+      refreshTokenRepository = new PostgreSQLRefreshTokenRepository(getDatabase());
+    }
+  }
+  return refreshTokenRepository;
+}
+
+export function getPasswordResetRepository(): PasswordResetRepository {
+  if (!passwordResetRepository) {
+    const dbType = process.env.DB_TYPE || 'memory';
+    const nodeEnv = process.env.NODE_ENV || 'development';
+
+    if (dbType === 'memory' || (nodeEnv === 'development' && dbType !== 'postgres')) {
+      throw new Error('Password reset repository requires PostgreSQL');
+    } else {
+      passwordResetRepository = new PostgreSQLPasswordResetRepository(getDatabase());
+    }
+  }
+  return passwordResetRepository;
 }
 

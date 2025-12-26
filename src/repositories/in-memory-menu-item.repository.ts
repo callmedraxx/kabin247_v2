@@ -1,11 +1,20 @@
 import { MenuItem, MenuItemVariant, MenuItemSearchParams, MenuItemListResponse, CreateMenuItemDTO, UpdateMenuItemDTO } from '../models/menu-item';
 import { MenuItemRepository } from './menu-item.repository';
 
+interface CatererPrice {
+  id: number;
+  variant_id: number;
+  caterer_id: number;
+  price: number;
+}
+
 export class InMemoryMenuItemRepository implements MenuItemRepository {
   private menuItems: MenuItem[] = [];
   private variants: MenuItemVariant[] = [];
+  private catererPrices: CatererPrice[] = [];
   private nextId: number = 1;
   private nextVariantId: number = 1;
+  private nextCatererPriceId: number = 1;
 
   async create(menuItemData: CreateMenuItemDTO): Promise<MenuItem> {
     const now = new Date();
@@ -28,13 +37,33 @@ export class InMemoryMenuItemRepository implements MenuItemRepository {
 
     // Create variants if provided
     if (menuItemData.variants && menuItemData.variants.length > 0) {
-      const itemVariants: MenuItemVariant[] = menuItemData.variants.map((variant, index) => ({
-        id: this.nextVariantId++,
-        menu_item_id: newMenuItem.id,
-        portion_size: variant.portion_size,
-        price: variant.price,
-        sort_order: index,
-      }));
+      const itemVariants: MenuItemVariant[] = menuItemData.variants.map((variant, index) => {
+        const variantId = this.nextVariantId++;
+        const newVariant: MenuItemVariant = {
+          id: variantId,
+          menu_item_id: newMenuItem.id,
+          portion_size: variant.portion_size,
+          price: variant.price,
+          sort_order: index,
+        };
+
+        // Add caterer prices if provided
+        if (variant.caterer_prices && variant.caterer_prices.length > 0) {
+          const variantCatererPrices = variant.caterer_prices.map(cp => ({
+            id: this.nextCatererPriceId++,
+            variant_id: variantId,
+            caterer_id: cp.caterer_id,
+            price: cp.price,
+          }));
+          this.catererPrices.push(...variantCatererPrices);
+          newVariant.caterer_prices = variantCatererPrices.map(cp => ({
+            caterer_id: cp.caterer_id,
+            price: cp.price,
+          }));
+        }
+
+        return newVariant;
+      });
 
       this.variants.push(...itemVariants);
       newMenuItem.variants = itemVariants;
@@ -51,7 +80,17 @@ export class InMemoryMenuItemRepository implements MenuItemRepository {
 
     const itemVariants = this.variants
       .filter(v => v.menu_item_id === id)
-      .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
+      .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
+      .map(variant => {
+        const catererPrices = this.catererPrices
+          .filter(cp => cp.variant_id === variant.id)
+          .map(cp => ({ caterer_id: cp.caterer_id, price: cp.price }));
+        
+        return {
+          ...variant,
+          caterer_prices: catererPrices.length > 0 ? catererPrices : undefined,
+        };
+      });
 
     return {
       ...menuItem,
@@ -114,7 +153,17 @@ export class InMemoryMenuItemRepository implements MenuItemRepository {
     const itemsWithVariants = paginated.map(item => {
       const itemVariants = this.variants
         .filter(v => v.menu_item_id === item.id)
-        .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
+        .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
+        .map(variant => {
+          const catererPrices = this.catererPrices
+            .filter(cp => cp.variant_id === variant.id)
+            .map(cp => ({ caterer_id: cp.caterer_id, price: cp.price }));
+          
+          return {
+            ...variant,
+            caterer_prices: catererPrices.length > 0 ? catererPrices : undefined,
+          };
+        });
       return { ...item, variants: itemVariants };
     });
 
@@ -134,17 +183,50 @@ export class InMemoryMenuItemRepository implements MenuItemRepository {
 
     // Handle variants update
     if (menuItemData.variants && menuItemData.variants.length > 0) {
+      // Get existing variant IDs before deletion
+      const existingVariantIds = this.variants
+        .filter(v => v.menu_item_id === id)
+        .map(v => v.id!);
+      
+      // Delete existing caterer prices for variants
+      this.catererPrices = this.catererPrices.filter(
+        cp => !existingVariantIds.includes(cp.variant_id)
+      );
+      
       // Delete existing variants
       this.variants = this.variants.filter(v => v.menu_item_id !== id);
       
       // Create new variants
-      const newVariants: MenuItemVariant[] = menuItemData.variants.map((variant, idx) => ({
-        id: variant.id || this.nextVariantId++,
-        menu_item_id: id,
-        portion_size: variant.portion_size,
-        price: variant.price,
-        sort_order: idx,
-      }));
+      const newVariants: MenuItemVariant[] = menuItemData.variants.map((variant, idx) => {
+        const variantId = variant.id || this.nextVariantId++;
+        const newVariant: MenuItemVariant = {
+          id: variantId,
+          menu_item_id: id,
+          portion_size: variant.portion_size,
+          price: variant.price,
+          sort_order: idx,
+        };
+
+        // Add caterer prices if provided
+        if (variant.caterer_prices && variant.caterer_prices.length > 0) {
+          // Remove existing caterer prices for this variant (if updating)
+          this.catererPrices = this.catererPrices.filter(cp => cp.variant_id !== variantId);
+          
+          const variantCatererPrices = variant.caterer_prices.map(cp => ({
+            id: this.nextCatererPriceId++,
+            variant_id: variantId,
+            caterer_id: cp.caterer_id,
+            price: cp.price,
+          }));
+          this.catererPrices.push(...variantCatererPrices);
+          newVariant.caterer_prices = variantCatererPrices.map(cp => ({
+            caterer_id: cp.caterer_id,
+            price: cp.price,
+          }));
+        }
+
+        return newVariant;
+      });
       this.variants.push(...newVariants);
     }
 
@@ -162,8 +244,12 @@ export class InMemoryMenuItemRepository implements MenuItemRepository {
     if (index === -1) return false;
 
     this.menuItems.splice(index, 1);
-    // Cascade delete variants
+    // Cascade delete variants and caterer prices
+    const variantIds = this.variants
+      .filter(v => v.menu_item_id === id)
+      .map(v => v.id!);
     this.variants = this.variants.filter(v => v.menu_item_id !== id);
+    this.catererPrices = this.catererPrices.filter(cp => !variantIds.includes(cp.variant_id));
     return true;
   }
 
@@ -179,5 +265,26 @@ export class InMemoryMenuItemRepository implements MenuItemRepository {
 
   async count(): Promise<number> {
     return this.menuItems.length;
+  }
+
+  async getPriceForVariant(variantId: number, catererId: number | null): Promise<number | null> {
+    // If caterer_id is provided, try to get caterer-specific price first
+    if (catererId !== null) {
+      const catererPrice = this.catererPrices.find(
+        cp => cp.variant_id === variantId && cp.caterer_id === catererId
+      );
+      
+      if (catererPrice) {
+        return catererPrice.price;
+      }
+    }
+    
+    // Fallback to base variant price
+    const variant = this.variants.find(v => v.id === variantId);
+    if (variant) {
+      return variant.price;
+    }
+    
+    return null;
   }
 }

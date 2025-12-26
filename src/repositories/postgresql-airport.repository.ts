@@ -8,16 +8,13 @@ export class PostgreSQLAirportRepository implements AirportRepository {
   async create(airport: CreateAirportDTO): Promise<Airport> {
     const query = `
       INSERT INTO airports (
-        airport_name, fbo_name, fbo_email, fbo_phone,
-        airport_code_iata, airport_code_icao, created_at, updated_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())
+        airport_name, airport_code_iata, airport_code_icao,
+        created_at, updated_at
+      ) VALUES ($1, $2, $3, NOW(), NOW())
       RETURNING *
     `;
     const result = await this.db.query(query, [
       airport.airport_name,
-      airport.fbo_name,
-      airport.fbo_email || null,
-      airport.fbo_phone || null,
       airport.airport_code_iata || null,
       airport.airport_code_icao || null,
     ]);
@@ -41,18 +38,15 @@ export class PostgreSQLAirportRepository implements AirportRepository {
     if (params.search) {
       whereClause = `WHERE (
         airport_name ILIKE $1 OR
-        fbo_name ILIKE $1 OR
         airport_code_iata ILIKE $1 OR
-        airport_code_icao ILIKE $1 OR
-        fbo_email ILIKE $1 OR
-        fbo_phone ILIKE $1
+        airport_code_icao ILIKE $1
       )`;
       queryParams.push(`%${params.search}%`);
     }
 
     // Build ORDER BY clause with SQL injection protection
-    const allowedSortFields = ['id', 'airport_name', 'fbo_name', 'airport_code_iata', 'airport_code_icao', 'created_at', 'updated_at'];
-    const sortBy = allowedSortFields.includes(params.sortBy || '') ? params.sortBy : 'id';
+    const allowedSortFields = ['id', 'airport_name', 'airport_code_iata', 'airport_code_icao', 'created_at', 'updated_at'];
+    const sortBy = allowedSortFields.includes(params.sortBy || '') ? params.sortBy : 'airport_name';
     const sortOrder = params.sortOrder === 'desc' ? 'DESC' : 'ASC';
     const orderBy = `ORDER BY ${sortBy} ${sortOrder}`;
 
@@ -61,7 +55,7 @@ export class PostgreSQLAirportRepository implements AirportRepository {
     const countResult = await this.db.query(countQuery, queryParams);
     const total = parseInt(countResult.rows[0].total);
 
-    // Data query - build parameterized query
+    // Data query
     const limitParam = queryParams.length + 1;
     const offsetParam = queryParams.length + 2;
     const dataParams = [...queryParams, limit, offset];
@@ -90,18 +84,6 @@ export class PostgreSQLAirportRepository implements AirportRepository {
     if (airport.airport_name !== undefined) {
       updates.push(`airport_name = $${paramIndex++}`);
       values.push(airport.airport_name);
-    }
-    if (airport.fbo_name !== undefined) {
-      updates.push(`fbo_name = $${paramIndex++}`);
-      values.push(airport.fbo_name);
-    }
-    if (airport.fbo_email !== undefined) {
-      updates.push(`fbo_email = $${paramIndex++}`);
-      values.push(airport.fbo_email || null);
-    }
-    if (airport.fbo_phone !== undefined) {
-      updates.push(`fbo_phone = $${paramIndex++}`);
-      values.push(airport.fbo_phone || null);
     }
     if (airport.airport_code_iata !== undefined) {
       updates.push(`airport_code_iata = $${paramIndex++}`);
@@ -132,7 +114,7 @@ export class PostgreSQLAirportRepository implements AirportRepository {
   async delete(id: number): Promise<boolean> {
     const query = 'DELETE FROM airports WHERE id = $1';
     const result = await this.db.query(query, [id]);
-    return result.rowCount > 0;
+    return result.rowCount ? result.rowCount > 0 : false;
   }
 
   async deleteMany(ids: number[]): Promise<number> {
@@ -149,4 +131,3 @@ export class PostgreSQLAirportRepository implements AirportRepository {
     return parseInt(result.rows[0].total);
   }
 }
-

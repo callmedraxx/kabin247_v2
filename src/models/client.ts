@@ -1,6 +1,7 @@
 export interface Client {
   id?: number;
   full_name: string;
+  company_name?: string;
   full_address: string;
   email?: string;
   contact_number?: string;
@@ -10,6 +11,7 @@ export interface Client {
 
 export interface CreateClientDTO {
   full_name: string;
+  company_name?: string;
   full_address: string;
   email: string;
   contact_number?: string;

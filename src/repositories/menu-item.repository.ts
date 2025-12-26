@@ -8,4 +8,5 @@ export interface MenuItemRepository {
   delete(id: number): Promise<boolean>;
   deleteMany(ids: number[]): Promise<number>;
   count(): Promise<number>;
+  getPriceForVariant(variantId: number, catererId: number | null): Promise<number | null>;
 }

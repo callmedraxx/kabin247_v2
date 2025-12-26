@@ -3,6 +3,7 @@ import { getClientRepository } from '../repositories';
 import { validateClient, normalizeClientData } from '../utils/client-validation';
 import { Logger } from '../utils/logger';
 import * as XLSX from 'xlsx';
+import ExcelJS from 'exceljs';
 
 export class ClientService {
   private repository = getClientRepository();
@@ -72,11 +73,12 @@ export class ClientService {
         throw new Error('Excel file has no sheets');
       }
 
-      // Look for a sheet named "Client" (case-insensitive)
+      // Look for a sheet named "Client" or "Clients" (case-insensitive)
       // If not found, fall back to the first sheet
-      let sheetName = workbook.SheetNames.find(name => 
-        name.toLowerCase().trim() === 'client'
-      );
+      let sheetName = workbook.SheetNames.find(name => {
+        const normalized = name.toLowerCase().trim();
+        return normalized === 'client' || normalized === 'clients';
+      });
       
       if (!sheetName) {
         // Fall back to first sheet if "Client" sheet not found
@@ -163,10 +165,10 @@ export class ClientService {
       
       // Also treat rows as empty if they don't have required fields
       const hasRequiredFields = getColumnValue(row, [
-        'full_name', 'Full_Name', 'Full Name', 'full name', 'Name', 'name',
+        'Full Name', 'full_name', 'Full_Name', 'full name', 'Name', 'name',
         'FULL NAME', 'FullName', 'Client Name', 'client name'
       ]) && getColumnValue(row, [
-        'full_address', 'Full_Address', 'Full Address', 'full address', 'Address', 'address',
+        'Full Address', 'full_address', 'Full_Address', 'full address', 'Address', 'address',
         'FULL ADDRESS', 'FullAddress', 'Client Address', 'client address'
       ]);
       
@@ -203,22 +205,26 @@ export class ClientService {
       }
 
       try {
-        // Try multiple column name variations (case-insensitive matching)
+        // Match exact export header names first, then fallback to variations
         const clientData: CreateClientDTO = {
           full_name: getColumnValue(row, [
-            'full_name', 'Full_Name', 'Full Name', 'full name', 'Name', 'name',
+            'Full Name', 'full_name', 'Full_Name', 'full name', 'Name', 'name',
             'FULL NAME', 'FullName', 'Client Name', 'client name', 'Client_Name'
           ]) || '',
+          company_name: getColumnValue(row, [
+            'Company Name', 'company_name', 'Company_Name', 'company name',
+            'COMPANY NAME', 'CompanyName', 'Company', 'company'
+          ]),
           full_address: getColumnValue(row, [
-            'full_address', 'Full_Address', 'Full Address', 'full address', 'Address', 'address',
+            'Full Address', 'full_address', 'Full_Address', 'full address', 'Address', 'address',
             'FULL ADDRESS', 'FullAddress', 'Client Address', 'client address', 'Client_Address'
           ]) || '',
           email: getColumnValue(row, [
-            'email', 'Email', 'EMAIL', 'Email Address', 'email address',
+            'Email', 'email', 'EMAIL', 'Email Address', 'email address',
             'E-mail', 'e-mail', 'Contact Email', 'contact email'
           ]) || '',
           contact_number: getColumnValue(row, [
-            'contact_number', 'Contact_Number', 'Contact Number', 'contact number',
+            'Contact Number', 'contact_number', 'Contact_Number', 'contact number',
             'Phone', 'phone', 'Phone Number', 'phone number', 'Tel', 'tel',
             'Telephone', 'telephone'
           ]),
@@ -299,23 +305,95 @@ export class ClientService {
     const response = await this.repository.findAll({ limit: 10000 });
     const clients = response.clients;
 
-    // Prepare data for Excel
-    const excelData = clients.map(client => ({
-      'Full Name': client.full_name,
-      'Full Address': client.full_address,
-      'Email': client.email || '',
-      'Contact Number': client.contact_number || '',
-      'Created At': client.created_at ? new Date(client.created_at).toISOString() : '',
-      'Updated At': client.updated_at ? new Date(client.updated_at).toISOString() : '',
-    }));
+    // Create workbook using ExcelJS for better formatting support
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet('Clients');
 
-    // Create workbook and worksheet
-    const worksheet = XLSX.utils.json_to_sheet(excelData);
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, 'Clients');
+    // Define column headers and widths - narrower columns with wrapping
+    const columns = [
+      { header: 'Full Name', key: 'fullName', width: 25 },
+      { header: 'Company Name', key: 'companyName', width: 25 },
+      { header: 'Full Address', key: 'fullAddress', width: 35 },
+      { header: 'Email', key: 'email', width: 30 },
+      { header: 'Contact Number', key: 'contactNumber', width: 18 },
+    ];
+
+    worksheet.columns = columns;
+
+    // Style header row - increase height and enable wrapping
+    const headerRow = worksheet.getRow(1);
+    headerRow.font = { bold: true };
+    headerRow.alignment = { vertical: 'middle', horizontal: 'left', wrapText: true };
+    headerRow.height = 25; // Increase header row height
+
+    // Add data rows
+    clients.forEach((client, index) => {
+      const row = worksheet.addRow({
+        fullName: client.full_name || '',
+        companyName: client.company_name || '',
+        fullAddress: client.full_address || '',
+        email: client.email || '',
+        contactNumber: client.contact_number || '',
+      });
+
+      // Enable text wrapping for all cells
+      row.eachCell((cell, colNumber) => {
+        cell.alignment = { 
+          wrapText: true, // Enable wrapping for all columns
+          vertical: 'top', 
+          horizontal: 'left' 
+        };
+        // Ensure cell is treated as text and preserve newlines
+        if (cell.value !== null && cell.value !== undefined) {
+          const cellValue = String(cell.value);
+          // Normalize newlines for Excel
+          cell.value = cellValue.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+        }
+      });
+
+      // Set row height to match header height
+      row.height = 25;
+    });
+
+    // Auto-size columns based on content - ensure headers and all data fit
+    worksheet.columns.forEach((column, index) => {
+      let maxLength = 10;
+      
+      // Check header - ensure it fits
+      const headerCell = worksheet.getCell(1, index + 1);
+      if (headerCell.value) {
+        maxLength = Math.max(maxLength, String(headerCell.value).length);
+      }
+      
+      // Check ALL data cells to find the longest value
+      for (let i = 0; i < clients.length; i++) {
+        const cell = worksheet.getCell(i + 2, index + 1);
+        if (cell.value !== null && cell.value !== undefined) {
+          const cellValue = String(cell.value);
+          // For addresses, we want to allow longer text but still set a reasonable width
+          if (column.key === 'fullAddress') {
+            // For addresses, use a generous width but don't limit too much
+            maxLength = Math.max(maxLength, Math.min(cellValue.length, 100));
+          } else {
+            maxLength = Math.max(maxLength, cellValue.length);
+          }
+        }
+      }
+      
+      // Set column width - keep narrower since we're using text wrapping
+      // Add minimal padding since text will wrap
+      const padding = 3;
+      if (column.key === 'fullAddress') {
+        // Address column: keep narrower, allow wrapping
+        column.width = Math.max(maxLength + padding, 35);
+      } else {
+        // Other columns: keep at reasonable width
+        column.width = Math.max(maxLength + padding, column.width || 15);
+      }
+    });
 
     // Generate buffer
-    const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
-    return buffer;
+    const buffer = await workbook.xlsx.writeBuffer();
+    return Buffer.from(buffer);
   }
 }

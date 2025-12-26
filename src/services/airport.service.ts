@@ -129,38 +129,21 @@ export class AirportService {
       }
 
       try {
-        // Try multiple column name variations (case-insensitive matching)
+        // Match exact export header names first, then fallback to variations
         const airportData: CreateAirportDTO = {
           airport_name: getColumnValue(row, [
-            'airport_name', 'Airport_Name', 'Airport Name', 'airport name', 'Airport', 'airport',
-            'Airport Name', 'AIRPORT NAME', 'AirportName', 'Airport Name',
+            'Airport Name', 'airport_name', 'Airport_Name', 'airport name', 'Airport', 'airport',
+            'AIRPORT NAME', 'AirportName',
             'Airport/Facility Name', 'Facility Name', 'facility name'
           ]) || '',
-          fbo_name: getColumnValue(row, [
-            'fbo_name', 'FBO_Name', 'FBO Name', 'fbo name', 'FBO', 'fbo',
-            'FBO NAME', 'FBOName', 'FboName', 'Fixed Base Operator', 'Fixed Base Operator Name',
-            'Company/Operator', 'Company', 'company', 'Operator', 'operator',
-            'Company Name', 'company name', 'FBO/Fixed Base Operator'
-          ]) || '',
-          fbo_email: getColumnValue(row, [
-            'fbo_email', 'FBO_Email', 'FBO Email', 'fbo email', 'Email', 'email',
-            'FBO EMAIL', 'FBOEmail', 'FboEmail', 'Contact Email', 'Contact Email',
-            'Email Address', 'email address', 'E-mail', 'e-mail'
-          ]),
-          fbo_phone: getColumnValue(row, [
-            'fbo_phone', 'FBO_Phone', 'FBO Phone', 'fbo phone', 'Phone', 'phone',
-            'FBO PHONE', 'FBOPhone', 'FboPhone', 'Contact Phone', 'Telephone',
-            'Phone Number', 'phone number', 'Phone #', 'phone #', 'Tel', 'tel',
-            'Telephone Number', 'telephone number'
-          ]),
           airport_code_iata: getColumnValue(row, [
-            'airport_code_iata', 'Airport_Code_IATA', 'IATA', 'iata', 'IATA Code', 'iata code',
-            'Airport Code IATA', 'IATA_CODE', 'IataCode', 'IATA Code',
+            'IATA Code', 'airport_code_iata', 'Airport_Code_IATA', 'IATA', 'iata', 'iata code',
+            'Airport Code IATA', 'IATA_CODE', 'IataCode',
             'IATA Airport Code', 'iata airport code'
           ]),
           airport_code_icao: getColumnValue(row, [
-            'airport_code_icao', 'Airport_Code_ICAO', 'ICAO', 'icao', 'ICAO Code', 'icao code',
-            'Airport Code ICAO', 'ICAO_CODE', 'IcaoCode', 'ICAO Code',
+            'ICAO Code', 'airport_code_icao', 'Airport_Code_ICAO', 'ICAO', 'icao', 'icao code',
+            'Airport Code ICAO', 'ICAO_CODE', 'IcaoCode',
             'ICAO Airport Code', 'icao airport code'
           ]),
         };
@@ -176,8 +159,8 @@ export class AirportService {
         }
 
         // Validate required fields
-        if (!airportData.airport_name || !airportData.fbo_name) {
-          const errorMsg = `Row ${i + 2}: Missing required fields (airport_name, fbo_name)`;
+        if (!airportData.airport_name) {
+          const errorMsg = `Row ${i + 2}: Missing required field (airport_name)`;
           errors.push(errorMsg);
           // Only log if row has some data (not completely empty)
           if (!isEmptyRow(row)) {
@@ -266,9 +249,6 @@ export class AirportService {
     // Prepare data for Excel
     const excelData = airports.map(airport => ({
       'Airport Name': airport.airport_name,
-      'FBO Name': airport.fbo_name,
-      'FBO Email': airport.fbo_email || '',
-      'FBO Phone': airport.fbo_phone || '',
       'IATA Code': airport.airport_code_iata || '',
       'ICAO Code': airport.airport_code_icao || '',
       'Created At': airport.created_at ? new Date(airport.created_at).toISOString() : '',

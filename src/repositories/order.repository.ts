@@ -8,7 +8,8 @@ export interface OrderRepository {
   updateStatus(id: number, status: string): Promise<Order | null>;
   delete(id: number): Promise<boolean>;
   deleteMany(ids: number[]): Promise<number>;
-  getNextOrderNumber(): Promise<string>;
+  getNextOrderNumber(clientName: string): Promise<string>;
+  orderNumberExists(orderNumber: string, excludeOrderId?: number): Promise<boolean>;
   count(): Promise<number>;
   savePdf(orderId: number, buffer: Buffer, filename: string, mimeType: string): Promise<void>;
   getPdf(orderId: number): Promise<{ pdf_data: Buffer; filename: string; mime_type: string; updated_at?: Date } | null>;

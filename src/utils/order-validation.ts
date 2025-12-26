@@ -1,4 +1,4 @@
-import { CreateOrderDTO, UpdateOrderDTO } from '../models/order';
+import { CreateOrderDTO, UpdateOrderDTO, getOrderTypeFromAlias, OrderType } from '../models/order';
 
 export interface ValidationResult {
   valid: boolean;
@@ -49,14 +49,23 @@ export function validateOrder(order: CreateOrderDTO | UpdateOrderDTO): Validatio
 
   // Validate order_type (required for CreateOrderDTO)
   if ('order_type' in order) {
-    const validOrderTypes = ['QE', 'Serv', 'Hub'];
+    const validOrderTypes: OrderType[] = ['Inflight order', 'QE Serv Hub Order', 'Restaurant Pickup Order'];
+    const validAliases = ['inflight', 'qe_serv_hub', 'restaurant_pickup'];
+    
     if (!order.order_type) {
       // Only require order_type for create (when client_name is present)
       if ('client_name' in order) {
         errors.push('order_type is required');
       }
-    } else if (!validOrderTypes.includes(order.order_type)) {
-      errors.push(`order_type must be one of: ${validOrderTypes.join(', ')}`);
+    } else {
+      // Check if it's an alias and convert it
+      const orderTypeValue = typeof order.order_type === 'string' ? order.order_type : '';
+      const convertedType = getOrderTypeFromAlias(orderTypeValue);
+      const finalType = convertedType || orderTypeValue;
+      
+      if (!validOrderTypes.includes(finalType as OrderType) && !validAliases.includes(orderTypeValue)) {
+        errors.push(`order_type must be one of: ${validOrderTypes.join(', ')} or aliases: ${validAliases.join(', ')}`);
+      }
     }
   }
 
@@ -69,7 +78,7 @@ export function validateOrder(order: CreateOrderDTO | UpdateOrderDTO): Validatio
 
   // Validate status enum (for UpdateOrderDTO)
   if ('status' in order && order.status) {
-    const validStatuses = ['awaiting_quote', 'awaiting_caterer', 'quote_sent', 'quote_approved', 'in_preparation', 'ready_for_delivery', 'delivered', 'cancelled'];
+    const validStatuses = ['awaiting_quote', 'awaiting_client_approval', 'awaiting_caterer', 'caterer_confirmed', 'in_preparation', 'ready_for_delivery', 'delivered', 'paid', 'cancelled', 'order_changed'];
     if (!validStatuses.includes(order.status)) {
       errors.push(`status must be one of: ${validStatuses.join(', ')}`);
     }
@@ -120,8 +129,8 @@ export function validateOrder(order: CreateOrderDTO | UpdateOrderDTO): Validatio
         }
         if (item.price === undefined || item.price === null) {
           errors.push(`items[${index}].price is required`);
-        } else if (typeof item.price !== 'number' || item.price <= 0) {
-          errors.push(`items[${index}].price must be a positive number`);
+        } else if (typeof item.price !== 'number' || item.price < 0) {
+          errors.push(`items[${index}].price must be a non-negative number`);
         }
       });
     }
@@ -137,6 +146,9 @@ export function normalizeOrderData(order: CreateOrderDTO | UpdateOrderDTO): Crea
   const normalized = { ...order };
 
   // Normalize strings (trim whitespace)
+  if ('order_number' in normalized && normalized.order_number) {
+    normalized.order_number = normalized.order_number.trim();
+  }
   if ('client_name' in normalized && normalized.client_name) {
     normalized.client_name = normalized.client_name.trim();
   }
@@ -148,6 +160,14 @@ export function normalizeOrderData(order: CreateOrderDTO | UpdateOrderDTO): Crea
   }
   if ('aircraft_tail_number' in normalized && normalized.aircraft_tail_number) {
     normalized.aircraft_tail_number = normalized.aircraft_tail_number.trim().toUpperCase();
+  }
+
+  // Normalize order_type: convert alias to full type if needed
+  if ('order_type' in normalized && normalized.order_type) {
+    const convertedType = getOrderTypeFromAlias(normalized.order_type as string);
+    if (convertedType) {
+      normalized.order_type = convertedType;
+    }
   }
 
   // Normalize service_charge to 0 if undefined

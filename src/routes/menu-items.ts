@@ -1,10 +1,30 @@
-import { Router, Request, Response } from 'express';
+import { Router, Request, Response, NextFunction } from 'express';
+import multer from 'multer';
 import { MenuItemService } from '../services/menu-item.service';
 import { CreateMenuItemDTO, UpdateMenuItemDTO, MenuItemSearchParams, MenuItemStatusUpdateDTO } from '../models/menu-item';
 import { Logger } from '../utils/logger';
 
 export const menuItemRouter = Router();
 const menuItemService = new MenuItemService();
+
+// Configure multer for file uploads
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 10 * 1024 * 1024, // 10MB limit
+  },
+  fileFilter: (req, file, cb) => {
+    const allowedMimes = [
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // .xlsx
+      'application/vnd.ms-excel', // .xls
+    ];
+    if (allowedMimes.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Invalid file type. Only Excel files (.xlsx, .xls) are allowed.'));
+    }
+  },
+});
 
 menuItemRouter.post('/', async (req: Request, res: Response) => {
   try {
@@ -105,6 +125,146 @@ menuItemRouter.delete('/', async (req: Request, res: Response) => {
     res.json({ message: 'Menu items deleted successfully', deleted });
   } catch (error: any) {
     Logger.error('Failed to delete menu items', error, { method: 'DELETE', url: '/menu-items' });
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * @swagger
+ * /menu-items/import:
+ *   post:
+ *     summary: Import menu items from Excel file
+ *     tags: [Menu Items]
+ *     consumes:
+ *       - multipart/form-data
+ *     parameters:
+ *       - in: formData
+ *         name: file
+ *         type: file
+ *         required: true
+ *         description: Excel file (.xlsx or .xls) with menu item data
+ *     responses:
+ *       200:
+ *         description: Import completed
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                 success:
+ *                   type: integer
+ *                 errors:
+ *                   type: array
+ *                   items:
+ *                     type: string
+ *       400:
+ *         description: Invalid file or validation errors
+ */
+menuItemRouter.post('/import', (req: Request, res: Response, next: NextFunction) => {
+  upload.single('file')(req, res, (err: any) => {
+    if (err) {
+      Logger.error('File upload error', err, {
+        method: 'POST',
+        url: '/menu-items/import',
+      });
+      return res.status(400).json({ error: err.message || 'File upload failed' });
+    }
+    next();
+  });
+}, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    if (!req.file) {
+      Logger.warn('No file uploaded for import', {
+        method: 'POST',
+        url: '/menu-items/import',
+      });
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+
+    Logger.info('Starting menu items import', {
+      method: 'POST',
+      url: '/menu-items/import',
+      fileName: req.file.originalname,
+      fileSize: req.file.size,
+      mimeType: req.file.mimetype,
+    });
+
+    const result = await menuItemService.importFromExcel(req.file.buffer);
+    
+    if (result.errors.length > 0) {
+      Logger.warn('Menu items import completed with errors', {
+        method: 'POST',
+        url: '/menu-items/import',
+        fileName: req.file.originalname,
+        success: result.success,
+        errorsCount: result.errors.length,
+        errors: result.errors,
+      });
+    } else {
+      Logger.info('Menu items import completed successfully', {
+        method: 'POST',
+        url: '/menu-items/import',
+        fileName: req.file.originalname,
+        success: result.success,
+        errorsCount: result.errors.length,
+      });
+    }
+
+    res.json({
+      message: 'Import completed',
+      success: result.success,
+      errors: result.errors,
+    });
+  } catch (error: any) {
+    Logger.error('Failed to import menu items from Excel', error, {
+      method: 'POST',
+      url: '/menu-items/import',
+      fileName: req.file?.originalname,
+    });
+    res.status(400).json({ error: error.message });
+  }
+});
+
+/**
+ * @swagger
+ * /menu-items/export:
+ *   get:
+ *     summary: Export all menu items to Excel file
+ *     tags: [Menu Items]
+ *     responses:
+ *       200:
+ *         description: Excel file download
+ *         content:
+ *           application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+ *             schema:
+ *               type: string
+ *               format: binary
+ */
+menuItemRouter.get('/export', async (req: Request, res: Response) => {
+  try {
+    Logger.info('Starting menu items export', {
+      method: 'GET',
+      url: '/menu-items/export',
+    });
+
+    const buffer = await menuItemService.exportToExcel();
+    
+    Logger.info('Menu items export completed', {
+      method: 'GET',
+      url: '/menu-items/export',
+      fileSize: buffer.length,
+    });
+
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', 'attachment; filename=menu-items.xlsx');
+    res.send(buffer);
+  } catch (error: any) {
+    Logger.error('Failed to export menu items to Excel', error, {
+      method: 'GET',
+      url: '/menu-items/export',
+    });
     res.status(500).json({ error: error.message });
   }
 });
