@@ -12,6 +12,11 @@ export class InviteService {
    * Create an invite for a CSR employee
    */
   async createInvite(email: string, permissions: PermissionMap, invitedByUserId: number): Promise<{ token: string; expiresAt: Date; inviteId: number }> {
+    // #region agent log
+    const logData1 = {location:'invite.service.ts:14',message:'createInvite called',data:{email,permissions,permissionsStringified:JSON.stringify(permissions)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'};
+    try{require('fs').appendFileSync('/root/kabin247_v2/.cursor/debug.log',JSON.stringify(logData1)+'\n');}catch(e){}
+    // #endregion
+    
     // Check if user already exists
     const existingUser = await this.userRepository.findByEmail(email);
     if (existingUser) {
@@ -37,6 +42,11 @@ export class InviteService {
       expires_at: expiresAt,
       invited_by_user_id: invitedByUserId,
     });
+
+    // #region agent log
+    const logData2 = {location:'invite.service.ts:42',message:'Invite created',data:{inviteId:invite.id,storedPermissions:invite.permissions},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'};
+    try{require('fs').appendFileSync('/root/kabin247_v2/.cursor/debug.log',JSON.stringify(logData2)+'\n');}catch(e){}
+    // #endregion
 
     return { token, expiresAt, inviteId: invite.id };
   }
@@ -76,8 +86,17 @@ export class InviteService {
    * Accept invite and create user account
    */
   async acceptInvite(token: string, password: string): Promise<{ user: any } | null> {
+    // #region agent log
+    const logData1 = {location:'invite.service.ts:78',message:'acceptInvite called',data:{tokenLength:token.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'};
+    try{require('fs').appendFileSync('/root/kabin247_v2/.cursor/debug.log',JSON.stringify(logData1)+'\n');}catch(e){}
+    // #endregion
     const tokenHash = hashToken(token);
     const invite = await this.inviteRepository.findByTokenHash(tokenHash);
+    
+    // #region agent log
+    const logData2 = {location:'invite.service.ts:83',message:'Invite lookup result',data:{inviteFound:!!invite,inviteId:invite?.id,inviteEmail:invite?.email,invitePermissions:invite?.permissions,permissionsType:typeof invite?.permissions,permissionsIsNull:invite?.permissions===null,permissionsIsUndefined:invite?.permissions===undefined},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'};
+    try{require('fs').appendFileSync('/root/kabin247_v2/.cursor/debug.log',JSON.stringify(logData2)+'\n');}catch(e){}
+    // #endregion
     
     if (!invite) {
       return null;
@@ -90,6 +109,10 @@ export class InviteService {
     }
 
     // Create user (password will be hashed in repository)
+    // #region agent log
+    const logData3 = {location:'invite.service.ts:93',message:'Creating user with permissions',data:{email:invite.email,role:'CSR',permissions:invite.permissions,permissionsStringified:JSON.stringify(invite.permissions)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'};
+    try{require('fs').appendFileSync('/root/kabin247_v2/.cursor/debug.log',JSON.stringify(logData3)+'\n');}catch(e){}
+    // #endregion
     const user = await this.userRepository.create({
       email: invite.email,
       password: password,
@@ -97,8 +120,18 @@ export class InviteService {
       permissions: invite.permissions,
     });
 
+    // #region agent log
+    const logData4 = {location:'invite.service.ts:101',message:'User created, checking saved permissions',data:{userId:user.id,userEmail:user.email,savedPermissions:user.permissions,permissionsType:typeof user.permissions,permissionsIsNull:user.permissions===null,permissionsIsUndefined:user.permissions===undefined},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'};
+    try{require('fs').appendFileSync('/root/kabin247_v2/.cursor/debug.log',JSON.stringify(logData4)+'\n');}catch(e){}
+    // #endregion
+
     // Mark invite as used
     await this.inviteRepository.markAsUsed(invite.id);
+
+    // #region agent log
+    const logData5 = {location:'invite.service.ts:105',message:'Invite marked as used',data:{inviteId:invite.id},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'};
+    try{require('fs').appendFileSync('/root/kabin247_v2/.cursor/debug.log',JSON.stringify(logData5)+'\n');}catch(e){}
+    // #endregion
 
     // Don't return password_hash
     const { password_hash, ...userWithoutPassword } = user;

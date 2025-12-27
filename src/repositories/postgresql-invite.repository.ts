@@ -90,8 +90,16 @@ export class PostgreSQLInviteRepository implements InviteRepository {
   }
 
   async markAsUsed(id: number): Promise<void> {
+    // #region agent log
+    const logData = {location:'postgresql-invite.repository.ts:92',message:'markAsUsed called',data:{inviteId:id},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'};
+    try{require('fs').appendFileSync('/root/kabin247_v2/.cursor/debug.log',JSON.stringify(logData)+'\n');}catch(e){}
+    // #endregion
     const query = 'UPDATE invites SET used_at = NOW() WHERE id = $1';
-    await this.db.query(query, [id]);
+    const result = await this.db.query(query, [id]);
+    // #region agent log
+    const logData2 = {location:'postgresql-invite.repository.ts:96',message:'markAsUsed result',data:{inviteId:id,rowsUpdated:result.rowCount},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'};
+    try{require('fs').appendFileSync('/root/kabin247_v2/.cursor/debug.log',JSON.stringify(logData2)+'\n');}catch(e){}
+    // #endregion
   }
 
   async delete(id: number): Promise<boolean> {
@@ -101,12 +109,22 @@ export class PostgreSQLInviteRepository implements InviteRepository {
   }
 
   async findAll(): Promise<Invite[]> {
-    const query = 'SELECT * FROM invites ORDER BY created_at DESC';
+    // #region agent log
+    const logData = {location:'postgresql-invite.repository.ts:103',message:'findAll invites called',timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'};
+    try{require('fs').appendFileSync('/root/kabin247_v2/.cursor/debug.log',JSON.stringify(logData)+'\n');}catch(e){}
+    // #endregion
+    // Filter to only show unused invites (pending invites)
+    const query = 'SELECT * FROM invites WHERE used_at IS NULL ORDER BY created_at DESC';
     const result = await this.db.query(query);
-    return result.rows.map((row: any) => ({
+    const invites = result.rows.map((row: any) => ({
       ...row,
       permissions: safeParsePermissions(row.permissions),
     }));
+    // #region agent log
+    const logData2 = {location:'postgresql-invite.repository.ts:110',message:'findAll invites result',data:{totalInvites:invites.length,invites:invites.map((i: Invite)=>({id:i.id,email:i.email,usedAt:i.used_at,expiresAt:i.expires_at}))},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'};
+    try{require('fs').appendFileSync('/root/kabin247_v2/.cursor/debug.log',JSON.stringify(logData2)+'\n');}catch(e){}
+    // #endregion
+    return invites;
   }
 
   async deleteExpired(): Promise<number> {

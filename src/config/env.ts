@@ -1,11 +1,43 @@
+/**
+ * Parse time string with optional unit suffix to seconds
+ * Examples: "15m" -> 900, "1h" -> 3600, "900" -> 900, "30d" -> 2592000
+ */
+function parseTimeToSeconds(value: string | undefined, defaultValue: string): number {
+  const raw = value || defaultValue;
+  const trimmed = raw.trim().toLowerCase();
+  
+  // If it's just a number, parse it directly
+  const numMatch = trimmed.match(/^(\d+)$/);
+  if (numMatch) {
+    return parseInt(numMatch[1], 10);
+  }
+  
+  // Parse with unit suffix
+  const unitMatch = trimmed.match(/^(\d+)([smhd])$/);
+  if (unitMatch) {
+    const num = parseInt(unitMatch[1], 10);
+    const unit = unitMatch[2];
+    const multipliers: { [key: string]: number } = {
+      's': 1,
+      'm': 60,
+      'h': 3600,
+      'd': 86400,
+    };
+    return num * (multipliers[unit] || 1);
+  }
+  
+  // Fallback to parseInt if format is unrecognized
+  return parseInt(raw, 10) || parseInt(defaultValue, 10);
+}
+
 export const env = {
   // JWT Secrets
   JWT_ACCESS_SECRET: process.env.JWT_ACCESS_SECRET || 'change-me-access-secret',
   JWT_REFRESH_SECRET: process.env.JWT_REFRESH_SECRET || 'change-me-refresh-secret',
   
   // Token TTLs (in seconds)
-  ACCESS_TOKEN_TTL: parseInt(process.env.ACCESS_TOKEN_TTL || '900', 10), // 15 minutes
-  REFRESH_TOKEN_TTL: parseInt(process.env.REFRESH_TOKEN_TTL || '2592000', 10), // 30 days
+  ACCESS_TOKEN_TTL: parseTimeToSeconds(process.env.ACCESS_TOKEN_TTL, '900'), // 15 minutes
+  REFRESH_TOKEN_TTL: parseTimeToSeconds(process.env.REFRESH_TOKEN_TTL, '2592000'), // 30 days
   
   // Frontend URL
   FRONTEND_URL: process.env.FRONTEND_URL || 'https://app.kabin247.com',

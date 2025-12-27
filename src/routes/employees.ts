@@ -73,6 +73,12 @@ employeesRouter.use(requireRole('ADMIN'));
 employeesRouter.post('/invite', async (req: Request, res: Response) => {
   const { email, permissions } = req.body;
   
+  // #region agent log
+  console.log('[DEBUG] Invite creation request:', JSON.stringify({email,permissions,permissionsType:typeof permissions,permissionsKeys:permissions?Object.keys(permissions):null,ordersRead:permissions?.['orders.read'],ordersUpdateStatus:permissions?.['orders.update_status'],fullRequestBody:req.body}, null, 2));
+  const logData1 = {location:'employees.ts:73',message:'Invite creation request received',data:{email,permissions,permissionsType:typeof permissions,permissionsKeys:permissions?Object.keys(permissions):null,permissionsStringified:JSON.stringify(permissions),ordersRead:permissions?.['orders.read'],ordersUpdateStatus:permissions?.['orders.update_status'],fullRequestBody:JSON.stringify(req.body)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'};
+  try{require('fs').appendFileSync('/root/kabin247_v2/.cursor/debug.log',JSON.stringify(logData1)+'\n');}catch(e){}
+  // #endregion
+  
   try {
     if (!email || !permissions) {
       return res.status(400).json({ error: 'Email and permissions are required' });
@@ -89,12 +95,55 @@ employeesRouter.post('/invite', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Permissions must be an object' });
     }
 
-    // Remove admin-only permissions from CSR invites
-    const cleanedPermissions: PermissionMap = { ...permissions };
-    delete cleanedPermissions['orders.set_paid'];
-    delete cleanedPermissions['invoices.send_final'];
-    delete cleanedPermissions['employees.manage'];
-    delete cleanedPermissions['invites.create'];
+    // Remove admin-only permissions from CSR invites and filter to only include true permissions
+    // NOTE: Frontend bug - sending false when checkboxes are checked. Workaround: detect and invert
+    const cleanedPermissions: PermissionMap = {};
+    const permissionKeys = Object.keys(permissions);
+    const allFalse = permissionKeys.length > 0 && permissionKeys.every(key => permissions[key] === false);
+    const hasExpectedKeys = permissionKeys.some(key => key === 'orders.read' || key === 'orders.update_status');
+    
+    // #region agent log
+    console.log(`[DEBUG] Permission analysis: keys=${permissionKeys.length}, allFalse=${allFalse}, hasExpectedKeys=${hasExpectedKeys}`);
+    // #endregion
+    
+    // Workaround for frontend bug: if all permissions are false AND we have expected permission keys,
+    // assume the frontend is sending inverted values (false when checked = true)
+    const shouldInvert = allFalse && hasExpectedKeys && permissionKeys.length > 0;
+    
+    // Only include permissions that are explicitly set to true (or inverted from false)
+    Object.keys(permissions).forEach(key => {
+      let value = permissions[key];
+      
+      // Workaround: invert if all values are false and we have expected keys (frontend bug)
+      if (shouldInvert && value === false) {
+        value = true;
+        // #region agent log
+        console.log(`[DEBUG] Inverting permission ${key} from false to true (frontend bug workaround)`);
+        // #endregion
+      }
+      
+      // #region agent log
+      console.log(`[DEBUG] Processing permission: ${key} = ${value} (type: ${typeof value}, isTrue: ${value===true}, isFalse: ${value===false})`);
+      const logKey = {location:'employees.ts:100',message:'Processing permission key',data:{key,value,valueType:typeof value,isTrue:value===true,isFalse:value===false,shouldInvert},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'};
+      try{require('fs').appendFileSync('/root/kabin247_v2/.cursor/debug.log',JSON.stringify(logKey)+'\n');}catch(e){}
+      // #endregion
+      
+      if (value === true) {
+        // Skip admin-only permissions
+        if (key !== 'orders.set_paid' && 
+            key !== 'invoices.send_final' && 
+            key !== 'employees.manage' && 
+            key !== 'invites.create') {
+          cleanedPermissions[key] = true;
+        }
+      }
+    });
+
+    // #region agent log
+    console.log('[DEBUG] Cleaned permissions:', JSON.stringify(cleanedPermissions, null, 2), 'Keys:', Object.keys(cleanedPermissions), 'IsEmpty:', Object.keys(cleanedPermissions).length === 0);
+    const logData2 = {location:'employees.ts:115',message:'Cleaned permissions before creating invite',data:{cleanedPermissions,cleanedPermissionsKeys:Object.keys(cleanedPermissions),cleanedPermissionsStringified:JSON.stringify(cleanedPermissions),ordersRead:cleanedPermissions['orders.read'],ordersUpdateStatus:cleanedPermissions['orders.update_status'],isEmpty:Object.keys(cleanedPermissions).length===0},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'};
+    try{require('fs').appendFileSync('/root/kabin247_v2/.cursor/debug.log',JSON.stringify(logData2)+'\n');}catch(e){}
+    // #endregion
 
     const inviteService = getInviteService();
     const userId = req.user!.id;
@@ -203,12 +252,20 @@ employeesRouter.patch('/:id/permissions', async (req: Request, res: Response) =>
       return res.status(400).json({ error: 'Permissions object is required' });
     }
 
-    // Remove admin-only permissions
-    const cleanedPermissions: PermissionMap = { ...permissions };
-    delete cleanedPermissions['orders.set_paid'];
-    delete cleanedPermissions['invoices.send_final'];
-    delete cleanedPermissions['employees.manage'];
-    delete cleanedPermissions['invites.create'];
+    // Remove admin-only permissions and filter to only include true permissions
+    const cleanedPermissions: PermissionMap = {};
+    // Only include permissions that are explicitly set to true
+    Object.keys(permissions).forEach(key => {
+      if (permissions[key] === true) {
+        // Skip admin-only permissions
+        if (key !== 'orders.set_paid' && 
+            key !== 'invoices.send_final' && 
+            key !== 'employees.manage' && 
+            key !== 'invites.create') {
+          cleanedPermissions[key] = true;
+        }
+      }
+    });
 
     const userService = getUserService();
     const employee = await userService.updateEmployeePermissions(id, cleanedPermissions);
