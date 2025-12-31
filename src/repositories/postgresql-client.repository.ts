@@ -9,9 +9,9 @@ export class PostgreSQLClientRepository implements ClientRepository {
   async create(client: CreateClientDTO): Promise<Client> {
     const query = `
       INSERT INTO clients (
-        full_name, company_name, full_address, email, contact_number,
+        full_name, company_name, full_address, email, contact_number, additional_emails,
         created_at, updated_at
-      ) VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
+      ) VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())
       RETURNING *
     `;
     const result = await this.db.query(query, [
@@ -20,6 +20,7 @@ export class PostgreSQLClientRepository implements ClientRepository {
       client.full_address,
       client.email || null,
       client.contact_number || null,
+      JSON.stringify(client.additional_emails || []),
     ]);
     return result.rows[0];
   }
@@ -137,6 +138,10 @@ export class PostgreSQLClientRepository implements ClientRepository {
     if (client.contact_number !== undefined) {
       updates.push(`contact_number = $${paramIndex++}`);
       values.push(client.contact_number || null);
+    }
+    if (client.additional_emails !== undefined) {
+      updates.push(`additional_emails = $${paramIndex++}`);
+      values.push(JSON.stringify(client.additional_emails || []));
     }
 
     if (updates.length === 0) {

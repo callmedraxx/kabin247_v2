@@ -47,5 +47,14 @@ export function normalizeClientData(data: CreateClientDTO): CreateClientDTO {
     normalized.contact_number = data.contact_number.trim() || undefined;
   }
 
+  if (data.company_name) {
+    normalized.company_name = data.company_name.trim() || undefined;
+  }
+
+  // Preserve additional_emails array
+  if (data.additional_emails && Array.isArray(data.additional_emails)) {
+    normalized.additional_emails = data.additional_emails;
+  }
+
   return normalized;
 }

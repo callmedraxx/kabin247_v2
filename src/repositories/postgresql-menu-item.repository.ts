@@ -44,11 +44,20 @@ export class PostgreSQLMenuItemRepository implements MenuItemRepository {
 
     const menuItem = itemResult.rows[0];
 
-    // Insert variants if provided
+    // Insert variants if provided, or create a default variant if price is provided directly
     const variants: MenuItemVariant[] = [];
-    if (menuItemData.variants && menuItemData.variants.length > 0) {
-      for (let i = 0; i < menuItemData.variants.length; i++) {
-        const variant = menuItemData.variants[i];
+    
+    // Determine variants to insert
+    let variantsToInsert = menuItemData.variants || [];
+    
+    // If no variants but price is provided directly, create a default variant
+    if (variantsToInsert.length === 0 && menuItemData.price !== undefined && menuItemData.price > 0) {
+      variantsToInsert = [{ portion_size: '1', price: menuItemData.price }];
+    }
+    
+    if (variantsToInsert.length > 0) {
+      for (let i = 0; i < variantsToInsert.length; i++) {
+        const variant = variantsToInsert[i];
         const variantQuery = `
           INSERT INTO menu_item_variants (
             menu_item_id, portion_size, price, sort_order
@@ -320,7 +329,15 @@ export class PostgreSQLMenuItemRepository implements MenuItemRepository {
     }
 
     // Handle variants update
-    if (menuItemData.variants && menuItemData.variants.length > 0) {
+    // Determine variants to update - if price is provided without variants, create a default variant
+    let variantsToUpdate = menuItemData.variants || [];
+    
+    if (variantsToUpdate.length === 0 && menuItemData.price !== undefined && menuItemData.price > 0) {
+      // Create a default variant with the provided price
+      variantsToUpdate = [{ portion_size: '1', price: menuItemData.price }];
+    }
+    
+    if (variantsToUpdate.length > 0) {
       // Get existing variant IDs before deletion (for cascading caterer prices)
       const existingVariantsQuery = 'SELECT id FROM menu_item_variants WHERE menu_item_id = $1';
       const existingVariantsResult = await this.db.query(existingVariantsQuery, [id]);
@@ -338,8 +355,8 @@ export class PostgreSQLMenuItemRepository implements MenuItemRepository {
       await this.db.query('DELETE FROM menu_item_variants WHERE menu_item_id = $1', [id]);
       
       // Insert new variants
-      for (let i = 0; i < menuItemData.variants.length; i++) {
-        const variant = menuItemData.variants[i];
+      for (let i = 0; i < variantsToUpdate.length; i++) {
+        const variant = variantsToUpdate[i];
         const variantInsertQuery = `
           INSERT INTO menu_item_variants (menu_item_id, portion_size, price, sort_order)
           VALUES ($1, $2, $3, $4)

@@ -31,6 +31,7 @@ export interface CreateMenuItemDTO {
   food_type: 'veg' | 'non_veg';
   category?: string;
   image_url?: string;
+  price?: number; // Direct price - will create a default variant if no variants provided
   variants?: Array<{
     portion_size: string;
     price: number;
@@ -50,6 +51,7 @@ export interface UpdateMenuItemDTO {
   food_type?: 'veg' | 'non_veg';
   category?: string;
   image_url?: string;
+  price?: number; // Direct price - will create/update a default variant if no variants provided
   variants?: Array<{
     id?: number;
     portion_size: string;

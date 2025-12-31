@@ -6,6 +6,7 @@ export interface Caterer {
   airport_code_iata?: string;
   airport_code_icao?: string;
   time_zone?: string;
+  additional_emails?: string[];
   created_at?: Date;
   updated_at?: Date;
 }
@@ -17,6 +18,7 @@ export interface CreateCatererDTO {
   airport_code_iata?: string;
   airport_code_icao?: string;
   time_zone?: string;
+  additional_emails?: string[];
 }
 
 export interface CatererSearchParams {

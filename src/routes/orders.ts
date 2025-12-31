@@ -1021,8 +1021,9 @@ orderRouter.post('/:id/send-to-client', requirePermission('orders.read'), async 
     const attachments = [];
     if (order.status !== 'delivered') {
       // Get PDF attachment based on format (A = with pricing, B = without pricing)
+      // For clients, always pass 'client' as recipient type to show status instead of revision
       const pdfResult = pdfFormat === 'B' 
-        ? await orderService.getOrCreateOrderPdfB(id)
+        ? await orderService.getOrCreateOrderPdfB(id, 'client')
         : await orderService.getOrCreateOrderPdf(id);
       
       attachments.push({
@@ -1032,9 +1033,15 @@ orderRouter.post('/:id/send-to-client', requirePermission('orders.read'), async 
       });
     }
 
+    // Get CC emails from request body
+    const ccEmails = req.body.cc_emails && Array.isArray(req.body.cc_emails) 
+      ? req.body.cc_emails.filter((e: string) => e && e.trim())
+      : undefined;
+
     // Send email
     const result = await emailService.sendEmail({
       to: clientEmail,
+      cc: ccEmails,
       subject,
       html,
       attachments: attachments.length > 0 ? attachments : undefined,
@@ -1043,7 +1050,6 @@ orderRouter.post('/:id/send-to-client', requirePermission('orders.read'), async 
     if (!result.success) {
       return res.status(500).json({ error: result.error });
     }
-
 
     Logger.info('Email sent to client', {
       orderId: id,
@@ -1155,12 +1161,18 @@ orderRouter.post('/:id/send-to-caterer', requirePermission('orders.read'), async
     // Generate HTML email
     const html = emailService.generateEmailHTML(body, order.order_number || '');
 
-    // Caterer always gets PDF B (without pricing)
-    const pdfResult = await orderService.getOrCreateOrderPdfB(id);
+    // Caterer always gets PDF B (without pricing) with 'caterer' recipient type to show revision
+    const pdfResult = await orderService.getOrCreateOrderPdfB(id, 'caterer');
+
+    // Get CC emails from request body
+    const ccEmails = req.body.cc_emails && Array.isArray(req.body.cc_emails) 
+      ? req.body.cc_emails.filter((e: string) => e && e.trim())
+      : undefined;
 
     // Send email
     const result = await emailService.sendEmail({
       to: catererEmail,
+      cc: ccEmails,
       subject,
       html,
       attachments: [{
@@ -1283,8 +1295,9 @@ orderRouter.post('/:id/send-to-both', requirePermission('orders.read'), async (r
     }
 
     // Get both PDF formats
-    const pdfA = await orderService.getOrCreateOrderPdf(id); // With pricing
-    const pdfB = await orderService.getOrCreateOrderPdfB(id); // Without pricing
+    const pdfA = await orderService.getOrCreateOrderPdf(id); // With pricing (for client)
+    const pdfBForClient = await orderService.getOrCreateOrderPdfB(id, 'client'); // Without pricing for client (shows status)
+    const pdfBForCaterer = await orderService.getOrCreateOrderPdfB(id, 'caterer'); // Without pricing for caterer (shows revision)
 
     const results: any = {
       client: null,
@@ -1310,11 +1323,17 @@ orderRouter.post('/:id/send-to-both', requirePermission('orders.read'), async (r
       const clientBody = req.body.custom_client_message || clientTemplate.body(clientFirstName);
       const clientHtml = emailService.generateEmailHTML(clientBody, order.order_number || '');
       
-      // Use appropriate PDF format for client
-      const clientPdf = clientPdfFormat === 'B' ? pdfB : pdfA;
+      // Use appropriate PDF format for client (with status, not revision)
+      const clientPdf = clientPdfFormat === 'B' ? pdfBForClient : pdfA;
+
+      // Get CC emails from request body
+      const ccEmails = req.body.cc_emails && Array.isArray(req.body.cc_emails) 
+        ? req.body.cc_emails.filter((e: string) => e && e.trim())
+        : undefined;
 
       const clientResult = await emailService.sendEmail({
         to: clientEmail,
+        cc: ccEmails,
         subject: clientSubject,
         html: clientHtml,
         attachments: [{
@@ -1342,13 +1361,19 @@ orderRouter.post('/:id/send-to-both', requirePermission('orders.read'), async (r
       const catererBody = req.body.custom_caterer_message || catererTemplate.body('Team');
       const catererHtml = emailService.generateEmailHTML(catererBody, order.order_number || '');
 
+      // Get CC emails from request body (same CC list for both if sending to both)
+      const catererCcEmails = req.body.cc_emails && Array.isArray(req.body.cc_emails) 
+        ? req.body.cc_emails.filter((e: string) => e && e.trim())
+        : undefined;
+
       const catererResult = await emailService.sendEmail({
         to: catererEmail,
+        cc: catererCcEmails,
         subject: catererSubject,
         html: catererHtml,
         attachments: [{
-          filename: pdfB.filename,
-          content: pdfB.buffer,
+          filename: pdfBForCaterer.filename,
+          content: pdfBForCaterer.buffer,
           contentType: 'application/pdf',
         }],
       });

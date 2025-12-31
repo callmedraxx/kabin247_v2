@@ -291,6 +291,22 @@ async function createOrdersTable(): Promise<void> {
   } catch (error) {
     console.error('Error adding company_name column:', error);
   }
+
+  // Add additional_emails column to clients for existing databases (JSONB array of emails)
+  try {
+    await dbAdapter!.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS additional_emails JSONB DEFAULT '[]'::jsonb;`);
+    console.log('additional_emails column added to clients');
+  } catch (error) {
+    console.error('Error adding additional_emails column to clients:', error);
+  }
+
+  // Add additional_emails column to caterers for existing databases (JSONB array of emails)
+  try {
+    await dbAdapter!.query(`ALTER TABLE caterers ADD COLUMN IF NOT EXISTS additional_emails JSONB DEFAULT '[]'::jsonb;`);
+    console.log('additional_emails column added to caterers');
+  } catch (error) {
+    console.error('Error adding additional_emails column to caterers:', error);
+  }
 }
 
 async function createCategoriesTable(): Promise<void> {

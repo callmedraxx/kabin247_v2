@@ -10,8 +10,8 @@ export class PostgreSQLCatererRepository implements CatererRepository {
     const query = `
       INSERT INTO caterers (
         caterer_name, caterer_number, caterer_email, airport_code_iata,
-        airport_code_icao, time_zone, created_at, updated_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())
+        airport_code_icao, time_zone, additional_emails, created_at, updated_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW())
       RETURNING *
     `;
     const result = await this.db.query(query, [
@@ -21,6 +21,7 @@ export class PostgreSQLCatererRepository implements CatererRepository {
       caterer.airport_code_iata || null,
       caterer.airport_code_icao || null,
       caterer.time_zone || null,
+      JSON.stringify(caterer.additional_emails || []),
     ]);
     return result.rows[0];
   }
@@ -111,6 +112,10 @@ export class PostgreSQLCatererRepository implements CatererRepository {
     if (caterer.time_zone !== undefined) {
       updates.push(`time_zone = $${paramIndex++}`);
       values.push(caterer.time_zone || null);
+    }
+    if (caterer.additional_emails !== undefined) {
+      updates.push(`additional_emails = $${paramIndex++}`);
+      values.push(JSON.stringify(caterer.additional_emails || []));
     }
 
     if (updates.length === 0) {

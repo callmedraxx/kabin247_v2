@@ -117,10 +117,29 @@ function formatPrice(value: any): string {
   return num.toFixed(2);
 }
 
-function formatDate(dateStr: string): string {
-  if (!dateStr) return '';
+function formatDate(dateInput: string | Date | null | undefined): string {
+  if (!dateInput) return '';
+  
+  // If it's already a Date object, use UTC methods directly
+  if (dateInput instanceof Date) {
+    if (isNaN(dateInput.getTime())) return '';
+    return `${String(dateInput.getUTCMonth() + 1).padStart(2, '0')}/${String(dateInput.getUTCDate()).padStart(2, '0')}/${String(dateInput.getUTCFullYear()).slice(-2)}`;
+  }
+  
+  // Convert to string if needed
+  const dateStr = String(dateInput);
+  
+  // If it's in YYYY-MM-DD format, parse it directly to avoid timezone issues
+  const match = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (match) {
+    const [, year, month, day] = match;
+    return `${month}/${day}/${year.slice(-2)}`;
+  }
+  
+  // Fallback: parse as date but use UTC methods to avoid timezone conversion
   const date = new Date(dateStr);
-  return `${String(date.getMonth() + 1).padStart(2, '0')}/${String(date.getDate()).padStart(2, '0')}/${String(date.getFullYear()).slice(-2)}`;
+  if (isNaN(date.getTime())) return '';
+  return `${String(date.getUTCMonth() + 1).padStart(2, '0')}/${String(date.getUTCDate()).padStart(2, '0')}/${String(date.getUTCFullYear()).slice(-2)}`;
 }
 
 function formatTime(timeStr: string): string {
@@ -171,18 +190,20 @@ export function generateOrderHTML(order: any): string {
     // Pale blue shading for alternating rows, or clean black line
     const bg = i % 2 === 0 ? '#fff' : '#f0f9ff';
     const borderColor = i % 2 === 0 ? '#e5e7eb' : '#e5e7eb';
-    const desc = item.item_description ? `<div style="font-family:'Times New Roman',Times,serif;font-size:14px;color:${c.textLight};margin-top:4px;line-height:1.4">${escapeHtml(item.item_description)}</div>` : '';
-    const packagingTag = item.packaging ? `<div style="font-family:'Times New Roman',Times,serif;font-size:14px;font-weight:bold;color:#0369a1;margin-top:4px">${escapeHtml(item.packaging)}</div>` : '';
+    // Preserve newlines in description by converting to <br/> tags
+    const descText = item.item_description ? escapeHtml(item.item_description).replace(/\n/g, '<br/>') : '';
+    const desc = descText ? `<div style="font-family:'Times New Roman',Times,serif;font-size:13px;color:${c.textLight};margin-top:4px;line-height:1.4">${descText}</div>` : '';
+    const packagingTag = item.packaging ? `<div style="font-family:'Times New Roman',Times,serif;font-size:13px;font-weight:bold;color:#0369a1;margin-top:4px">${escapeHtml(item.packaging)}</div>` : '';
     const qty = parseFloat(item.portion_size) || 1;
     return `<tr style="background:${bg}">
-      <td style="padding:8px 16px;border-bottom:1px solid ${borderColor};width:50%">
-        <div style="font-family:'Times New Roman',Times,serif;font-size:14px;font-weight:500">${escapeHtml(item.item_name)}</div>
+      <td style="padding:8px 16px;border-bottom:1px solid ${borderColor};width:54%">
+        <div style="font-family:'Times New Roman',Times,serif;font-size:16px;font-weight:600;color:${c.primary}">${escapeHtml(item.item_name)}</div>
         ${desc}
         ${packagingTag}
       </td>
-      <td style="padding:8px 10px;text-align:center;border-bottom:1px solid ${borderColor};width:12%;font-family:'Times New Roman',Times,serif;font-size:12px">${escapeHtml(item.portion_size)}</td>
-      <td style="padding:8px 10px;text-align:right;border-bottom:1px solid ${borderColor};width:19%;font-family:'Times New Roman',Times,serif;font-size:12px;color:${c.textLight}">$${formatPrice(item.price/qty)}</td>
-      <td style="padding:8px 10px;text-align:right;border-bottom:1px solid ${borderColor};width:19%;font-family:'Times New Roman',Times,serif;font-size:12px;font-weight:600">$${formatPrice(item.price)}</td>
+      <td style="padding:8px 6px;text-align:center;border-bottom:1px solid ${borderColor};width:10%;font-family:'Times New Roman',Times,serif;font-size:12px">${escapeHtml(item.portion_size)}</td>
+      <td style="padding:8px 6px;text-align:right;border-bottom:1px solid ${borderColor};width:18%;font-family:'Times New Roman',Times,serif;font-size:12px;color:${c.textLight}">$${formatPrice(item.price/qty)}</td>
+      <td style="padding:8px 6px;text-align:right;border-bottom:1px solid ${borderColor};width:18%;font-family:'Times New Roman',Times,serif;font-size:12px;font-weight:600">$${formatPrice(item.price)}</td>
     </tr>`;
   }).join('');
 
@@ -316,7 +337,7 @@ export function generateOrderPDF(order: any, styles: PDFStyleConfig = defaultPDF
 
   // TABLE
   const tw = cw;
-  const cols = { item: tw * 0.50, qty: tw * 0.12, unit: tw * 0.18, total: tw * 0.20 };
+  const cols = { item: tw * 0.54, qty: tw * 0.10, unit: tw * 0.18, total: tw * 0.18 };
 
   doc.roundedRect(m, y, tw, 40, 4).fillColor(c.primaryDark).fill();
   doc.fillColor(c.white).fontSize(14).font(styles.fonts.bold);
@@ -335,7 +356,7 @@ export function generateOrderPDF(order: any, styles: PDFStyleConfig = defaultPDF
     doc.moveTo(m, y + rh).lineTo(m + tw, y + rh).strokeColor(c.borderLight).lineWidth(0.5).stroke();
 
     const ty = y + (hasDesc || hasTags ? 10 : 11);
-    doc.fillColor(c.text).fontSize(15).font(styles.fonts.bold).text(decodeHtmlEntitiesForText(item.item_name || ''), m + 12, ty, { width: cols.item - 20 });
+    doc.fillColor(c.primary).fontSize(16).font(styles.fonts.bold).text(decodeHtmlEntitiesForText(item.item_name || ''), m + 12, ty, { width: cols.item - 20 });
     let descY = ty + 17;
     if (hasDesc) { 
       doc.fillColor(c.textLight).fontSize(12).font(styles.fonts.body).text(decodeHtmlEntitiesForText(item.item_description), m + 12, descY, { width: cols.item - 20 }); 
@@ -502,15 +523,18 @@ function groupItemsByCategory(items: any[]): Map<string, any[]> {
  * - Items grouped by category
  * - Shows packaging preferences
  */
-export function generateOrderHTMLB(order: any): string {
+export function generateOrderHTMLB(order: any, recipientType: 'client' | 'caterer' = 'caterer'): string {
   const s = defaultPDFStyles;
   const c = s.colors;
   const displayNum = getDisplayOrderNumber(order);
   const orderTypeTitle = getOrderTypeTitle(order.order_type);
   const revisionCount = order.revision_count || 0;
+  const statusLabel = getStatusLabel(order.status);
+  const statusColor = statusColors[order.status] || c.secondary;
+  const statusBg = statusBackgrounds[order.status] || c.background;
   
-  // Check if this PDF is for a caterer (when status is awaiting_quote or awaiting_caterer)
-  const isForCaterer = order.status === 'awaiting_quote' || order.status === 'awaiting_caterer';
+  // Check if this PDF is for a caterer (when status is awaiting_quote or awaiting_caterer, or explicitly set)
+  const isForCaterer = recipientType === 'caterer' || (order.status === 'awaiting_quote' || order.status === 'awaiting_caterer');
   
   // For caterers (awaiting_quote or awaiting_caterer status), use Kabin247 info instead of client info
   const clientName = isForCaterer 
@@ -544,19 +568,20 @@ export function generateOrderHTMLB(order: any): string {
     // Pale blue shading for alternating rows, or clean black line
     const bg = i % 2 === 0 ? '#fff' : '#f0f9ff';
     const borderColor = i % 2 === 0 ? '#e5e7eb' : '#e5e7eb';
-    const desc = item.item_description ? `<div style="font-family:'Times New Roman',Times,serif;font-size:14px;color:${c.textLight};margin-top:4px;line-height:1.4">${escapeHtml(item.item_description)}</div>` : '';
-    const packaging = item.packaging ? `<div style="font-family:'Times New Roman',Times,serif;font-size:14px;font-weight:bold;color:#0369a1;margin-top:4px">${escapeHtml(item.packaging)}</div>` : '';
+    // Preserve newlines in description by converting to <br/> tags
+    const descText = item.item_description ? escapeHtml(item.item_description).replace(/\n/g, '<br/>') : '';
+    const desc = descText ? `<div style="font-family:'Times New Roman',Times,serif;font-size:14px;color:${c.textLight};margin-top:4px;line-height:1.4">${descText}</div>` : '';
     const portionSize = item.portion_size || '';
     
+    // Note: packaging is only shown in the dedicated Packaging Preference column, not in the description
     return `<tr style="background:${bg}">
-      <td style="padding:8px 16px;border-bottom:1px solid ${borderColor};width:50%">
-        <div style="font-family:'Times New Roman',Times,serif;font-size:14px;font-weight:500">${escapeHtml(item.item_name)}</div>
+      <td style="padding:8px 16px;border-bottom:1px solid ${borderColor};width:58%">
+        <div style="font-family:'Times New Roman',Times,serif;font-size:16px;font-weight:600;color:${c.primary}">${escapeHtml(item.item_name)}</div>
         ${desc}
-        ${packaging}
       </td>
-      <td style="padding:8px 10px;text-align:center;border-bottom:1px solid ${borderColor};width:18%;font-family:'Times New Roman',Times,serif;font-size:12px">${escapeHtml(portionSize)}</td>
-      <td style="padding:8px 10px;text-align:center;border-bottom:1px solid ${borderColor};width:16%;font-family:'Times New Roman',Times,serif;font-size:12px">${escapeHtml(item.portion_size || '1')}</td>
-      <td style="padding:8px 10px;text-align:center;border-bottom:1px solid ${borderColor};width:16%;font-family:'Times New Roman',Times,serif;font-size:12px;font-weight:bold">${escapeHtml(item.packaging || '')}</td>
+      <td style="padding:8px 6px;text-align:center;border-bottom:1px solid ${borderColor};width:10%;font-family:'Times New Roman',Times,serif;font-size:12px">${escapeHtml(portionSize)}</td>
+      <td style="padding:8px 6px;text-align:center;border-bottom:1px solid ${borderColor};width:10%;font-family:'Times New Roman',Times,serif;font-size:12px">${escapeHtml(item.portion_size || '1')}</td>
+      <td style="padding:8px 6px;text-align:center;border-bottom:1px solid ${borderColor};width:22%;font-family:'Times New Roman',Times,serif;font-size:12px;font-weight:bold">${escapeHtml(item.packaging || '')}</td>
     </tr>`;
   }).join('');
 
@@ -564,15 +589,20 @@ export function generateOrderHTMLB(order: any): string {
   const logoUrl = order._logoUrl || '/assets/logo.png';
   const logoImg = `<img src="${escapeHtml(logoUrl)}" style="height:200px;margin-bottom:12px" alt="${escapeHtml(s.company.name)}" onerror="this.style.display='none';this.nextElementSibling.style.display='block'"/><div style="display:none;font-size:24px;font-weight:700;color:${c.primary};margin-bottom:12px">${escapeHtml(s.company.name)}</div>`;
 
+  // Show status for clients, revision for caterers
+  const badgeDisplay = isForCaterer 
+    ? `<span class="rev">REVISION ${revisionCount}</span>`
+    : `<span class="badge" style="display:inline-block;padding:6px 16px;border-radius:20px;font-size:12px;font-weight:600;background:${statusBg};color:${statusColor}">${escapeHtml(statusLabel)}</span>`;
+
   return `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Order #${displayNum}</title>
-<style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;background:#f1f5f9;padding:20px;color:${c.text}}.inv{max-width:850px;margin:0 auto;background:#fff;box-shadow:0 4px 6px -1px rgba(0,0,0,.1);border-radius:12px;overflow:hidden}.hdr{display:flex;justify-content:space-between;align-items:flex-start;padding:32px 40px;border-bottom:1px solid ${c.borderLight}}.co-info{font-size:12px;color:${c.textLight};line-height:1.5}.inv-num{font-size:24px;font-weight:700;color:${c.primary};margin-bottom:4px}.inv-sub{font-size:14px;color:${c.text};text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;font-weight:600}.rev{font-size:12px;color:${c.textMuted};background:${c.background};padding:4px 12px;border-radius:4px;display:inline-block}.det{display:grid;grid-template-columns:1fr 1fr;gap:40px;padding:32px 40px;background:${c.background}}.det h3{font-size:11px;text-transform:uppercase;letter-spacing:1px;color:${c.textMuted};margin-bottom:16px;font-weight:600}.det-row{display:flex;margin-bottom:10px;font-size:13px}.det-lbl{width:100px;color:${c.textLight}}.det-val{font-weight:500}.bt-name{font-size:16px;font-weight:600;margin-bottom:8px}.bt-co{font-size:13px;color:${c.primary};font-weight:500;margin-bottom:8px}.bt-det{font-size:12px;color:${c.textLight};line-height:1.6}.items{padding:32px 40px}table{width:100%;border-collapse:separate;border-spacing:0;border-radius:8px;overflow:hidden;border:1px solid ${c.border}}thead th{background:${c.primary};color:#fff;padding:10px 16px;font-family:'Times New Roman',Times,serif;font-size:12px;font-weight:bold;text-transform:uppercase;letter-spacing:.5px;text-align:left}thead th:nth-child(2),thead th:nth-child(3),thead th:nth-child(4){text-align:center}.ftr{padding:32px 40px;background:${c.background};border-top:1px solid ${c.borderLight};text-align:center}.ftr-msg{font-size:13px;color:${c.textLight};line-height:1.8;margin-bottom:16px}.warn{padding:0 40px 24px}.warn-box{background:#fef2f2;border:2px solid #ef4444;border-radius:8px;padding:16px 20px}.warn-title{color:#dc2626;font-size:13px;font-weight:700;margin-bottom:8px}.warn-text{color:#991b1b;font-size:12px}.inst{padding:0 40px 24px}.inst-box{background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:16px 20px}.inst-text{color:#166534;font-size:12px;font-style:italic;line-height:1.6}</style></head>
+<style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;background:#f1f5f9;padding:20px;color:${c.text}}.inv{max-width:850px;margin:0 auto;background:#fff;box-shadow:0 4px 6px -1px rgba(0,0,0,.1);border-radius:12px;overflow:hidden}.hdr{display:flex;justify-content:space-between;align-items:flex-start;padding:32px 40px;border-bottom:1px solid ${c.borderLight}}.co-info{font-size:12px;color:${c.textLight};line-height:1.5}.inv-num{font-size:24px;font-weight:700;color:${c.primary};margin-bottom:4px}.inv-sub{font-size:14px;color:${c.text};text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;font-weight:600}.rev{font-size:12px;color:${c.textMuted};background:${c.background};padding:4px 12px;border-radius:4px;display:inline-block}.badge{display:inline-block;padding:6px 16px;border-radius:20px;font-size:12px;font-weight:600}.det{display:grid;grid-template-columns:1fr 1fr;gap:40px;padding:32px 40px;background:${c.background}}.det h3{font-size:11px;text-transform:uppercase;letter-spacing:1px;color:${c.textMuted};margin-bottom:16px;font-weight:600}.det-row{display:flex;margin-bottom:10px;font-size:13px}.det-lbl{width:100px;color:${c.textLight}}.det-val{font-weight:500}.bt-name{font-size:16px;font-weight:600;margin-bottom:8px}.bt-co{font-size:13px;color:${c.primary};font-weight:500;margin-bottom:8px}.bt-det{font-size:12px;color:${c.textLight};line-height:1.6}.items{padding:32px 40px}table{width:100%;border-collapse:separate;border-spacing:0;border-radius:8px;overflow:hidden;border:1px solid ${c.border}}thead th{background:${c.primary};color:#fff;padding:10px 16px;font-family:'Times New Roman',Times,serif;font-size:12px;font-weight:bold;text-transform:uppercase;letter-spacing:.5px;text-align:left}thead th:nth-child(2),thead th:nth-child(3),thead th:nth-child(4){text-align:center}.ftr{padding:32px 40px;background:${c.background};border-top:1px solid ${c.borderLight};text-align:center}.ftr-msg{font-size:13px;color:${c.textLight};line-height:1.8;margin-bottom:16px}.warn{padding:0 40px 24px}.warn-box{background:#fef2f2;border:2px solid #ef4444;border-radius:8px;padding:16px 20px}.warn-title{color:#dc2626;font-size:13px;font-weight:700;margin-bottom:8px}.warn-text{color:#991b1b;font-size:12px}.inst{padding:0 40px 24px}.inst-box{background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:16px 20px}.inst-text{color:#166534;font-size:12px;font-style:italic;line-height:1.6}</style></head>
 <body><div class="inv">
 <div class="hdr">
   <div>${logoImg}<div class="co-info">${escapeHtml(s.company.address)}<br/><b>Phone | ${escapeHtml(s.company.phone)}</b></div></div>
   <div style="text-align:right">
     <div class="inv-num">ORDER #${escapeHtml(displayNum)}</div>
     <div class="inv-sub">${escapeHtml(orderTypeTitle)}</div>
-    <span class="rev">REVISION ${revisionCount}</span>
+    ${badgeDisplay}
   </div>
 </div>
 
@@ -626,11 +656,13 @@ ${packagingInst ? `<div class="inst"><div class="inst-box"><div class="inst-text
  * - Items grouped by category
  * - Multi-page support with page numbers
  */
-export function generateOrderPDFB(order: any, styles: PDFStyleConfig = defaultPDFStyles): typeof PDFDocument.prototype {
+export function generateOrderPDFB(order: any, styles: PDFStyleConfig = defaultPDFStyles, recipientType: 'client' | 'caterer' = 'caterer'): typeof PDFDocument.prototype {
   const c = styles.colors;
   const displayNum = getDisplayOrderNumber(order);
   const orderTypeTitle = getOrderTypeTitle(order.order_type);
   const revisionCount = order.revision_count || 0;
+  const statusLabel = getStatusLabel(order.status);
+  const statusColor = statusColors[order.status] || c.secondary;
 
   const doc = new PDFDocument({ 
     margin: styles.spacing.margin, 
@@ -648,8 +680,8 @@ export function generateOrderPDFB(order: any, styles: PDFStyleConfig = defaultPD
   const m = styles.spacing.margin;
   const cw = styles.layout.contentWidth;
 
-  // Check if this PDF is for a caterer (when status is awaiting_quote or awaiting_caterer)
-  const isForCaterer = order.status === 'awaiting_quote' || order.status === 'awaiting_caterer';
+  // Check if this PDF is for a caterer (when status is awaiting_quote or awaiting_caterer, or explicitly set)
+  const isForCaterer = recipientType === 'caterer' || (order.status === 'awaiting_quote' || order.status === 'awaiting_caterer');
   
   // For caterers (awaiting_quote or awaiting_caterer status), use Kabin247 info instead of client info
   const clientName = isForCaterer 
@@ -688,11 +720,21 @@ export function generateOrderPDFB(order: any, styles: PDFStyleConfig = defaultPD
   doc.fillColor(c.primary).fontSize(27).font(styles.fonts.bold).text(`ORDER #${displayNum}`, m, y, { width: cw, align: 'right' });
   doc.fillColor(c.text).fontSize(17).font(styles.fonts.bold).text(orderTypeTitle, m, y + 33, { width: cw, align: 'right' });
   
-  // Revision badge (closer to invoice number)
-  const revText = `REVISION ${revisionCount}`;
-  const revW = doc.widthOfString(revText) + 16;
-  doc.roundedRect(pw - m - revW, y + 50, revW, 18, 4).fillColor(c.background).fill();
-  doc.fillColor(c.textMuted).fontSize(14).font(styles.fonts.body).text(revText, pw - m - revW, y + 52, { width: revW, align: 'center' });
+  // Show status for clients, revision for caterers
+  const badgeY = y + 50;
+  if (isForCaterer) {
+    // Revision badge for caterers
+    const revText = `REVISION ${revisionCount}`;
+    const revW = doc.widthOfString(revText) + 16;
+    doc.roundedRect(pw - m - revW, badgeY, revW, 18, 4).fillColor(c.background).fill();
+    doc.fillColor(c.textMuted).fontSize(14).font(styles.fonts.body).text(revText, pw - m - revW, badgeY + 2, { width: revW, align: 'center' });
+  } else {
+    // Status badge for clients
+    const badgeW = doc.widthOfString(statusLabel) + 24;
+    const badgeX = pw - m - badgeW;
+    doc.roundedRect(badgeX, badgeY, badgeW, 22, 11).fillColor(statusColor).fill();
+    doc.fillColor(c.white).fontSize(14).font(styles.fonts.bold).text(statusLabel, badgeX, badgeY + 6, { width: badgeW, align: 'center' });
+  }
 
   // Company info
   doc.fillColor(c.textLight).fontSize(12).font(styles.fonts.body).text(styles.company.address, m, y + 155).text(`Phone | ${styles.company.phone}`, m, y + 170);
@@ -761,7 +803,7 @@ export function generateOrderPDFB(order: any, styles: PDFStyleConfig = defaultPD
 
   // TABLE - Items grouped by category
   const tw = cw;
-  const cols = { item: tw * 0.40, portion: tw * 0.18, qty: tw * 0.18, packaging: tw * 0.24 };
+  const cols = { item: tw * 0.50, portion: tw * 0.12, qty: tw * 0.12, packaging: tw * 0.26 };
 
   // Table header
   const drawTableHeader = (yPos: number) => {
@@ -809,7 +851,7 @@ export function generateOrderPDFB(order: any, styles: PDFStyleConfig = defaultPD
       doc.moveTo(m, y + rh).lineTo(m + tw, y + rh).strokeColor(c.borderLight).lineWidth(0.5).stroke();
 
       const ty = y + (hasDesc ? 9 : 12);
-      doc.fillColor(c.text).fontSize(14).font(styles.fonts.bold).text(decodeHtmlEntitiesForText(item.item_name || ''), m + 10, ty, { width: cols.item - 15 });
+      doc.fillColor(c.primary).fontSize(15).font(styles.fonts.bold).text(decodeHtmlEntitiesForText(item.item_name || ''), m + 10, ty, { width: cols.item - 15 });
       if (hasDesc) {
         doc.fillColor(c.textLight).fontSize(11).font(styles.fonts.body).text(decodeHtmlEntitiesForText(item.item_description), m + 10, ty + 18, { width: cols.item - 15 });
       }
@@ -854,9 +896,9 @@ export function generateOrderPDFB(order: any, styles: PDFStyleConfig = defaultPD
 /**
  * Generate PDF B buffer
  */
-export async function generateOrderPDFBBuffer(order: any): Promise<Buffer> {
+export async function generateOrderPDFBBuffer(order: any, recipientType: 'client' | 'caterer' = 'caterer'): Promise<Buffer> {
   // Generate HTML
-  let html = generateOrderHTMLB(order);
+  let html = generateOrderHTMLB(order, recipientType);
   
   // Replace logo URL with data URI for PDF generation
   const logoDataUri = getLogoDataUri();
@@ -912,7 +954,7 @@ export function generateOrderEmailHTML(order: any, customMessage?: string): stri
   const s = defaultPDFStyles;
   const c = s.colors;
   const displayNum = getDisplayOrderNumber(order);
-  const itemsHTML = (order.items || []).map((item: any) => `<tr><td style="padding:12px;border-bottom:1px solid ${c.borderLight}">${escapeHtml(item.item_name)}</td><td style="padding:12px;text-align:center;border-bottom:1px solid ${c.borderLight}">${escapeHtml(item.portion_size)}</td><td style="padding:12px;text-align:right;border-bottom:1px solid ${c.borderLight}">$${formatPrice(item.price)}</td></tr>`).join('');
+  const itemsHTML = (order.items || []).map((item: any) => `<tr><td style="padding:12px;border-bottom:1px solid ${c.borderLight};color:${c.primary};font-weight:500">${escapeHtml(item.item_name)}</td><td style="padding:12px;text-align:center;border-bottom:1px solid ${c.borderLight}">${escapeHtml(item.portion_size)}</td><td style="padding:12px;text-align:right;border-bottom:1px solid ${c.borderLight}">$${formatPrice(item.price)}</td></tr>`).join('');
 
   // Use airport_details codes if available, otherwise fall back to order.airport field (which may contain code or name)
   const airportCode = order.airport_details?.airport_code_iata || 

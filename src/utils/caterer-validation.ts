@@ -74,6 +74,11 @@ export function normalizeCatererData(data: CreateCatererDTO): CreateCatererDTO {
     normalized.time_zone = data.time_zone.trim() || undefined;
   }
 
+  // Preserve additional_emails array
+  if (data.additional_emails && Array.isArray(data.additional_emails)) {
+    normalized.additional_emails = data.additional_emails;
+  }
+
   return normalized;
 }
 

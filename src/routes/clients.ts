@@ -102,6 +102,16 @@ const upload = multer({
 clientRouter.post('/', async (req: Request, res: Response) => {
   try {
     const clientData: CreateClientDTO = req.body;
+    
+    // DEBUG: Log incoming request body to verify additional_emails
+    Logger.info('Creating client - Request body received', {
+      method: 'POST',
+      url: '/clients',
+      requestBody: req.body,
+      hasAdditionalEmails: !!req.body.additional_emails,
+      additionalEmailsCount: req.body.additional_emails?.length || 0,
+    });
+    
     const client = await clientService.createClient(clientData);
     res.status(201).json(client);
   } catch (error: any) {

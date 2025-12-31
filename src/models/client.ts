@@ -5,6 +5,7 @@ export interface Client {
   full_address: string;
   email?: string;
   contact_number?: string;
+  additional_emails?: string[];
   created_at?: Date;
   updated_at?: Date;
 }
@@ -15,6 +16,7 @@ export interface CreateClientDTO {
   full_address: string;
   email: string;
   contact_number?: string;
+  additional_emails?: string[];
 }
 
 export interface ClientSearchParams {

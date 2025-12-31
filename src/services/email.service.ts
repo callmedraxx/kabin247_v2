@@ -9,6 +9,7 @@ export type PDFFormat = 'A' | 'B';
 
 export interface EmailOptions {
   to: string | string[];
+  cc?: string | string[];
   subject: string;
   html: string;
   attachments?: Array<{
@@ -545,10 +546,14 @@ export class EmailService {
     try {
       const fromEmail = process.env.SMTP_EMAIL || 'noreply@kabin247.com';
       const toAddresses = Array.isArray(options.to) ? options.to.join(', ') : options.to;
+      const ccAddresses = options.cc 
+        ? (Array.isArray(options.cc) ? options.cc.join(', ') : options.cc)
+        : undefined;
 
       const mailOptions: nodemailer.SendMailOptions = {
         from: `"Kabin247 Inflight Support" <${fromEmail}>`,
         to: toAddresses,
+        cc: ccAddresses,
         subject: options.subject,
         html: options.html,
         attachments: options.attachments?.map(att => ({
@@ -562,6 +567,7 @@ export class EmailService {
       
       Logger.info('Email sent successfully', {
         to: toAddresses,
+        cc: ccAddresses || 'none',
         subject: options.subject,
         messageId: result.messageId,
       });

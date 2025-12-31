@@ -424,18 +424,20 @@ export class OrderService {
     };
   }
 
-  async getOrCreateOrderPdfB(orderId: number): Promise<{ buffer: Buffer; filename: string; mimeType: string; order: Order }> {
+  async getOrCreateOrderPdfB(orderId: number, recipientType: 'client' | 'caterer' = 'caterer'): Promise<{ buffer: Buffer; filename: string; mimeType: string; order: Order }> {
     const order = await this.repository.findById(orderId);
     if (!order) {
       throw new Error('Order not found');
     }
 
     // PDF B is always generated fresh (not cached) as it's typically for vendor/caterer
-    const filename = `order_${order.order_number}_vendor.pdf`;
+    const filename = recipientType === 'client' 
+      ? `order_${order.order_number}.pdf`
+      : `order_${order.order_number}_vendor.pdf`;
     const mimeType = 'application/pdf';
 
     // Generate PDF B (no pricing, grouped by category)
-    const pdfBuffer = await generateOrderPDFBBuffer(order);
+    const pdfBuffer = await generateOrderPDFBBuffer(order, recipientType);
 
     return {
       buffer: pdfBuffer,
