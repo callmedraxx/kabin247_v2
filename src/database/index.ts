@@ -184,6 +184,11 @@ async function createOrdersTable(): Promise<void> {
       delivery_fee DECIMAL(10,2) NOT NULL DEFAULT 0.00,
       service_charge DECIMAL(10,2) NOT NULL DEFAULT 0.00,
       coordination_fee DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+      airport_fee DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+      fbo_fee DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+      shopping_fee DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+      restaurant_pickup_fee DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+      airport_pickup_fee DECIMAL(10,2) NOT NULL DEFAULT 0.00,
       subtotal DECIMAL(10,2) NOT NULL DEFAULT 0.00,
       total DECIMAL(10,2) NOT NULL DEFAULT 0.00,
       revision_count INTEGER NOT NULL DEFAULT 0,
@@ -258,6 +263,11 @@ async function createOrdersTable(): Promise<void> {
     await dbAdapter!.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS order_type VARCHAR(50) CHECK (order_type IN ('Inflight order', 'QE Serv Hub Order', 'Restaurant Pickup Order'));`);
     await dbAdapter!.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivery_fee DECIMAL(10,2) NOT NULL DEFAULT 0.00;`);
     await dbAdapter!.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS coordination_fee DECIMAL(10,2) NOT NULL DEFAULT 0.00;`);
+    await dbAdapter!.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS airport_fee DECIMAL(10,2) NOT NULL DEFAULT 0.00;`);
+    await dbAdapter!.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS fbo_fee DECIMAL(10,2) NOT NULL DEFAULT 0.00;`);
+    await dbAdapter!.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS shopping_fee DECIMAL(10,2) NOT NULL DEFAULT 0.00;`);
+    await dbAdapter!.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS restaurant_pickup_fee DECIMAL(10,2) NOT NULL DEFAULT 0.00;`);
+    await dbAdapter!.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS airport_pickup_fee DECIMAL(10,2) NOT NULL DEFAULT 0.00;`);
     await dbAdapter!.query(`ALTER TABLE order_items ADD COLUMN IF NOT EXISTS menu_item_id INTEGER REFERENCES menu_items(id);`);
     
     // Create indexes after columns are ensured to exist
