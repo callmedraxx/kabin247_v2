@@ -65,6 +65,16 @@ orderRouter.use(requireAuth);
  *           type: number
  *         coordination_fee:
  *           type: number
+ *         airport_fee:
+ *           type: number
+ *         fbo_fee:
+ *           type: number
+ *         shopping_fee:
+ *           type: number
+ *         restaurant_pickup_fee:
+ *           type: number
+ *         airport_pickup_fee:
+ *           type: number
  *         subtotal:
  *           type: number
  *         total:
@@ -161,6 +171,21 @@ orderRouter.use(requireAuth);
  *         coordination_fee:
  *           type: number
  *           description: Optional coordination fee for the order
+ *         airport_fee:
+ *           type: number
+ *           description: Optional airport fee for the order
+ *         fbo_fee:
+ *           type: number
+ *           description: Optional FBO fee for the order
+ *         shopping_fee:
+ *           type: number
+ *           description: Optional shopping fee for the order
+ *         restaurant_pickup_fee:
+ *           type: number
+ *           description: Optional restaurant pickup fee for the order
+ *         airport_pickup_fee:
+ *           type: number
+ *           description: Optional airport pickup fee for the order
  *         items:
  *           type: array
  *           items:
@@ -246,6 +271,21 @@ orderRouter.use(requireAuth);
  *         coordination_fee:
  *           type: number
  *           description: Optional coordination fee for the order
+ *         airport_fee:
+ *           type: number
+ *           description: Optional airport fee for the order
+ *         fbo_fee:
+ *           type: number
+ *           description: Optional FBO fee for the order
+ *         shopping_fee:
+ *           type: number
+ *           description: Optional shopping fee for the order
+ *         restaurant_pickup_fee:
+ *           type: number
+ *           description: Optional restaurant pickup fee for the order
+ *         airport_pickup_fee:
+ *           type: number
+ *           description: Optional airport pickup fee for the order
  *         items:
  *           type: array
  *           items:
@@ -542,6 +582,16 @@ orderRouter.get('/:id', requirePermission('orders.read'), async (req: Request, r
  *               service_charge:
  *                 type: number
  *               coordination_fee:
+ *                 type: number
+ *               airport_fee:
+ *                 type: number
+ *               fbo_fee:
+ *                 type: number
+ *               shopping_fee:
+ *                 type: number
+ *               restaurant_pickup_fee:
+ *                 type: number
+ *               airport_pickup_fee:
  *                 type: number
  *               items:
  *                 type: array

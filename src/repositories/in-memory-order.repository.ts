@@ -73,7 +73,12 @@ export class InMemoryOrderRepository implements OrderRepository {
     const serviceCharge = orderData.service_charge || 0;
     const deliveryFee = orderData.delivery_fee || 0;
     const coordinationFee = orderData.coordination_fee || 0;
-    const total = subtotal + serviceCharge + deliveryFee + coordinationFee;
+    const airportFee = orderData.airport_fee || 0;
+    const fboFee = orderData.fbo_fee || 0;
+    const shoppingFee = orderData.shopping_fee || 0;
+    const restaurantPickupFee = orderData.restaurant_pickup_fee || 0;
+    const airportPickupFee = orderData.airport_pickup_fee || 0;
+    const total = subtotal + serviceCharge + deliveryFee + coordinationFee + airportFee + fboFee + shoppingFee + restaurantPickupFee + airportPickupFee;
 
     // Convert order_type alias to full type if needed
     const orderType = getOrderTypeFromAlias(orderData.order_type as string) || (orderData.order_type as OrderType);
@@ -103,6 +108,11 @@ export class InMemoryOrderRepository implements OrderRepository {
       delivery_fee: deliveryFee,
       service_charge: serviceCharge,
       coordination_fee: coordinationFee,
+      airport_fee: airportFee,
+      fbo_fee: fboFee,
+      shopping_fee: shoppingFee,
+      restaurant_pickup_fee: restaurantPickupFee,
+      airport_pickup_fee: airportPickupFee,
       subtotal,
       total,
       revision_count: 0,
@@ -227,6 +237,11 @@ export class InMemoryOrderRepository implements OrderRepository {
     let serviceCharge = existingOrder.service_charge;
     let deliveryFee = existingOrder.delivery_fee;
     let coordinationFee = existingOrder.coordination_fee;
+    let airportFee = existingOrder.airport_fee;
+    let fboFee = existingOrder.fbo_fee;
+    let shoppingFee = existingOrder.shopping_fee;
+    let restaurantPickupFee = existingOrder.restaurant_pickup_fee;
+    let airportPickupFee = existingOrder.airport_pickup_fee;
 
     // If items are being updated, recalculate subtotal
     if (orderData.items && orderData.items.length > 0) {
@@ -263,7 +278,27 @@ export class InMemoryOrderRepository implements OrderRepository {
       coordinationFee = orderData.coordination_fee;
     }
 
-    const total = subtotal + serviceCharge + deliveryFee + coordinationFee;
+    if (orderData.airport_fee !== undefined) {
+      airportFee = orderData.airport_fee;
+    }
+
+    if (orderData.fbo_fee !== undefined) {
+      fboFee = orderData.fbo_fee;
+    }
+
+    if (orderData.shopping_fee !== undefined) {
+      shoppingFee = orderData.shopping_fee;
+    }
+
+    if (orderData.restaurant_pickup_fee !== undefined) {
+      restaurantPickupFee = orderData.restaurant_pickup_fee;
+    }
+
+    if (orderData.airport_pickup_fee !== undefined) {
+      airportPickupFee = orderData.airport_pickup_fee;
+    }
+
+    const total = subtotal + serviceCharge + deliveryFee + coordinationFee + airportFee + fboFee + shoppingFee + restaurantPickupFee + airportPickupFee;
 
     // Convert order_type alias to full type if needed
     let orderType = existingOrder.order_type;
@@ -292,6 +327,11 @@ export class InMemoryOrderRepository implements OrderRepository {
       service_charge: serviceCharge,
       delivery_fee: deliveryFee,
       coordination_fee: coordinationFee,
+      airport_fee: airportFee,
+      fbo_fee: fboFee,
+      shopping_fee: shoppingFee,
+      restaurant_pickup_fee: restaurantPickupFee,
+      airport_pickup_fee: airportPickupFee,
       total,
       revision_count: (existingOrder.revision_count || 0) + 1,
       updated_at: new Date(),

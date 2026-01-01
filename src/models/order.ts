@@ -65,6 +65,11 @@ export interface Order {
   delivery_fee: number;
   service_charge: number;
   coordination_fee: number;
+  airport_fee: number;
+  fbo_fee: number;
+  shopping_fee: number;
+  restaurant_pickup_fee: number;
+  airport_pickup_fee: number;
   subtotal: number;
   total: number;
   revision_count: number;
@@ -101,6 +106,11 @@ export interface CreateOrderDTO {
   delivery_fee?: number;
   service_charge?: number;
   coordination_fee?: number;
+  airport_fee?: number;
+  fbo_fee?: number;
+  shopping_fee?: number;
+  restaurant_pickup_fee?: number;
+  airport_pickup_fee?: number;
   items: Array<{
     menu_item_id?: number;
     item_name: string;
@@ -131,6 +141,11 @@ export interface CreateOrderFromRefsDTO {
   delivery_fee?: number;
   service_charge?: number;
   coordination_fee?: number;
+  airport_fee?: number;
+  fbo_fee?: number;
+  shopping_fee?: number;
+  restaurant_pickup_fee?: number;
+  airport_pickup_fee?: number;
   items: Array<{
     item_id: number;
     item_description?: string | null;
@@ -165,6 +180,11 @@ export interface UpdateOrderDTO {
   delivery_fee?: number;
   service_charge?: number;
   coordination_fee?: number;
+  airport_fee?: number;
+  fbo_fee?: number;
+  shopping_fee?: number;
+  restaurant_pickup_fee?: number;
+  airport_pickup_fee?: number;
   items?: Array<{
     id?: number;
     menu_item_id?: number;

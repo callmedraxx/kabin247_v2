@@ -76,7 +76,12 @@ export class PostgreSQLOrderRepository implements OrderRepository {
     const serviceCharge = orderData.service_charge || 0;
     const deliveryFee = orderData.delivery_fee || 0;
     const coordinationFee = orderData.coordination_fee || 0;
-    const total = subtotal + serviceCharge + deliveryFee + coordinationFee;
+    const airportFee = orderData.airport_fee || 0;
+    const fboFee = orderData.fbo_fee || 0;
+    const shoppingFee = orderData.shopping_fee || 0;
+    const restaurantPickupFee = orderData.restaurant_pickup_fee || 0;
+    const airportPickupFee = orderData.airport_pickup_fee || 0;
+    const total = subtotal + serviceCharge + deliveryFee + coordinationFee + airportFee + fboFee + shoppingFee + restaurantPickupFee + airportPickupFee;
 
     // Insert order
     const orderQuery = `
@@ -84,9 +89,11 @@ export class PostgreSQLOrderRepository implements OrderRepository {
         order_number, client_id, caterer_id, airport_id, fbo_id, client_name, caterer, airport, aircraft_tail_number,
         delivery_date, delivery_time, order_priority, payment_method, status, order_type,
         description, notes, reheating_instructions, packaging_instructions,
-        dietary_restrictions, delivery_fee, service_charge, coordination_fee, subtotal, total,
+        dietary_restrictions, delivery_fee, service_charge, coordination_fee, 
+        airport_fee, fbo_fee, shopping_fee, restaurant_pickup_fee, airport_pickup_fee,
+        subtotal, total,
         created_at, updated_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, NOW(), NOW())
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, NOW(), NOW())
       RETURNING *
     `;
     
@@ -114,6 +121,11 @@ export class PostgreSQLOrderRepository implements OrderRepository {
       deliveryFee,
       serviceCharge,
       coordinationFee,
+      airportFee,
+      fboFee,
+      shoppingFee,
+      restaurantPickupFee,
+      airportPickupFee,
       subtotal,
       total,
     ]);
@@ -584,6 +596,26 @@ export class PostgreSQLOrderRepository implements OrderRepository {
       updates.push(`coordination_fee = $${paramIndex++}`);
       values.push(orderData.coordination_fee);
     }
+    if (orderData.airport_fee !== undefined) {
+      updates.push(`airport_fee = $${paramIndex++}`);
+      values.push(orderData.airport_fee);
+    }
+    if (orderData.fbo_fee !== undefined) {
+      updates.push(`fbo_fee = $${paramIndex++}`);
+      values.push(orderData.fbo_fee);
+    }
+    if (orderData.shopping_fee !== undefined) {
+      updates.push(`shopping_fee = $${paramIndex++}`);
+      values.push(orderData.shopping_fee);
+    }
+    if (orderData.restaurant_pickup_fee !== undefined) {
+      updates.push(`restaurant_pickup_fee = $${paramIndex++}`);
+      values.push(orderData.restaurant_pickup_fee);
+    }
+    if (orderData.airport_pickup_fee !== undefined) {
+      updates.push(`airport_pickup_fee = $${paramIndex++}`);
+      values.push(orderData.airport_pickup_fee);
+    }
     if (orderData.order_type !== undefined) {
       const orderType = getOrderTypeFromAlias(orderData.order_type as string) || (orderData.order_type as OrderType);
       updates.push(`order_type = $${paramIndex++}`);
@@ -620,13 +652,18 @@ export class PostgreSQLOrderRepository implements OrderRepository {
       }
     }
 
-    // Recalculate subtotal and total if items, service_charge, delivery_fee, or coordination_fee changed
-    if (orderData.items || orderData.service_charge !== undefined || orderData.delivery_fee !== undefined || orderData.coordination_fee !== undefined) {
+    // Recalculate subtotal and total if items or any fee changed
+    const feeChanged = orderData.service_charge !== undefined || orderData.delivery_fee !== undefined || 
+      orderData.coordination_fee !== undefined || orderData.airport_fee !== undefined ||
+      orderData.fbo_fee !== undefined || orderData.shopping_fee !== undefined ||
+      orderData.restaurant_pickup_fee !== undefined || orderData.airport_pickup_fee !== undefined;
+    
+    if (orderData.items || feeChanged) {
       const itemsQuery = 'SELECT SUM(price) as subtotal FROM order_items WHERE order_id = $1';
       const itemsResult = await this.db.query(itemsQuery, [id]);
       const subtotal = parseFloat(itemsResult.rows[0].subtotal || '0');
       
-      const orderResult = await this.db.query('SELECT service_charge, delivery_fee, coordination_fee FROM orders WHERE id = $1', [id]);
+      const orderResult = await this.db.query('SELECT service_charge, delivery_fee, coordination_fee, airport_fee, fbo_fee, shopping_fee, restaurant_pickup_fee, airport_pickup_fee FROM orders WHERE id = $1', [id]);
       const serviceCharge = orderData.service_charge !== undefined 
         ? orderData.service_charge 
         : parseFloat(orderResult.rows[0].service_charge || '0');
@@ -636,11 +673,26 @@ export class PostgreSQLOrderRepository implements OrderRepository {
       const coordinationFee = orderData.coordination_fee !== undefined 
         ? orderData.coordination_fee 
         : parseFloat(orderResult.rows[0].coordination_fee || '0');
+      const airportFee = orderData.airport_fee !== undefined 
+        ? orderData.airport_fee 
+        : parseFloat(orderResult.rows[0].airport_fee || '0');
+      const fboFee = orderData.fbo_fee !== undefined 
+        ? orderData.fbo_fee 
+        : parseFloat(orderResult.rows[0].fbo_fee || '0');
+      const shoppingFee = orderData.shopping_fee !== undefined 
+        ? orderData.shopping_fee 
+        : parseFloat(orderResult.rows[0].shopping_fee || '0');
+      const restaurantPickupFee = orderData.restaurant_pickup_fee !== undefined 
+        ? orderData.restaurant_pickup_fee 
+        : parseFloat(orderResult.rows[0].restaurant_pickup_fee || '0');
+      const airportPickupFee = orderData.airport_pickup_fee !== undefined 
+        ? orderData.airport_pickup_fee 
+        : parseFloat(orderResult.rows[0].airport_pickup_fee || '0');
       
       updates.push(`subtotal = $${paramIndex++}`);
       values.push(subtotal);
       updates.push(`total = $${paramIndex++}`);
-      values.push(subtotal + serviceCharge + deliveryFee + coordinationFee);
+      values.push(subtotal + serviceCharge + deliveryFee + coordinationFee + airportFee + fboFee + shoppingFee + restaurantPickupFee + airportPickupFee);
     }
 
     if (updates.length === 0 && !orderData.items) {

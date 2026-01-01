@@ -221,6 +221,12 @@ export class OrderService {
       dietary_restrictions: data.dietary_restrictions,
       delivery_fee: data.delivery_fee,
       service_charge: data.service_charge,
+      coordination_fee: data.coordination_fee,
+      airport_fee: data.airport_fee,
+      fbo_fee: data.fbo_fee,
+      shopping_fee: data.shopping_fee,
+      restaurant_pickup_fee: data.restaurant_pickup_fee,
+      airport_pickup_fee: data.airport_pickup_fee,
       items: mappedItems,
     };
 
