@@ -64,6 +64,7 @@ export interface Order {
   dietary_restrictions?: string;
   delivery_fee: number;
   service_charge: number;
+  coordination_fee: number;
   subtotal: number;
   total: number;
   revision_count: number;
@@ -99,6 +100,7 @@ export interface CreateOrderDTO {
   dietary_restrictions?: string;
   delivery_fee?: number;
   service_charge?: number;
+  coordination_fee?: number;
   items: Array<{
     menu_item_id?: number;
     item_name: string;
@@ -128,6 +130,7 @@ export interface CreateOrderFromRefsDTO {
   dietary_restrictions?: string;
   delivery_fee?: number;
   service_charge?: number;
+  coordination_fee?: number;
   items: Array<{
     item_id: number;
     item_description?: string | null;
@@ -161,6 +164,7 @@ export interface UpdateOrderDTO {
   dietary_restrictions?: string;
   delivery_fee?: number;
   service_charge?: number;
+  coordination_fee?: number;
   items?: Array<{
     id?: number;
     menu_item_id?: number;

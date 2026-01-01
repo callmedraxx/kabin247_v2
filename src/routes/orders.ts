@@ -63,6 +63,8 @@ orderRouter.use(requireAuth);
  *           type: number
  *         service_charge:
  *           type: number
+ *         coordination_fee:
+ *           type: number
  *         subtotal:
  *           type: number
  *         total:
@@ -156,6 +158,9 @@ orderRouter.use(requireAuth);
  *           description: Delivery fee for the order
  *         service_charge:
  *           type: number
+ *         coordination_fee:
+ *           type: number
+ *           description: Optional coordination fee for the order
  *         items:
  *           type: array
  *           items:
@@ -238,6 +243,9 @@ orderRouter.use(requireAuth);
  *           description: Delivery fee for the order
  *         service_charge:
  *           type: number
+ *         coordination_fee:
+ *           type: number
+ *           description: Optional coordination fee for the order
  *         items:
  *           type: array
  *           items:
@@ -532,6 +540,8 @@ orderRouter.get('/:id', requirePermission('orders.read'), async (req: Request, r
  *               delivery_fee:
  *                 type: number
  *               service_charge:
+ *                 type: number
+ *               coordination_fee:
  *                 type: number
  *               items:
  *                 type: array

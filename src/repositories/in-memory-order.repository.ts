@@ -72,7 +72,8 @@ export class InMemoryOrderRepository implements OrderRepository {
     const subtotal = orderData.items.reduce((sum, item) => sum + item.price, 0);
     const serviceCharge = orderData.service_charge || 0;
     const deliveryFee = orderData.delivery_fee || 0;
-    const total = subtotal + serviceCharge + deliveryFee;
+    const coordinationFee = orderData.coordination_fee || 0;
+    const total = subtotal + serviceCharge + deliveryFee + coordinationFee;
 
     // Convert order_type alias to full type if needed
     const orderType = getOrderTypeFromAlias(orderData.order_type as string) || (orderData.order_type as OrderType);
@@ -101,6 +102,7 @@ export class InMemoryOrderRepository implements OrderRepository {
       dietary_restrictions: orderData.dietary_restrictions,
       delivery_fee: deliveryFee,
       service_charge: serviceCharge,
+      coordination_fee: coordinationFee,
       subtotal,
       total,
       revision_count: 0,
@@ -224,6 +226,7 @@ export class InMemoryOrderRepository implements OrderRepository {
     let subtotal = existingOrder.subtotal;
     let serviceCharge = existingOrder.service_charge;
     let deliveryFee = existingOrder.delivery_fee;
+    let coordinationFee = existingOrder.coordination_fee;
 
     // If items are being updated, recalculate subtotal
     if (orderData.items && orderData.items.length > 0) {
@@ -256,7 +259,11 @@ export class InMemoryOrderRepository implements OrderRepository {
       deliveryFee = orderData.delivery_fee;
     }
 
-    const total = subtotal + serviceCharge + deliveryFee;
+    if (orderData.coordination_fee !== undefined) {
+      coordinationFee = orderData.coordination_fee;
+    }
+
+    const total = subtotal + serviceCharge + deliveryFee + coordinationFee;
 
     // Convert order_type alias to full type if needed
     let orderType = existingOrder.order_type;
@@ -284,6 +291,7 @@ export class InMemoryOrderRepository implements OrderRepository {
       subtotal,
       service_charge: serviceCharge,
       delivery_fee: deliveryFee,
+      coordination_fee: coordinationFee,
       total,
       revision_count: (existingOrder.revision_count || 0) + 1,
       updated_at: new Date(),
