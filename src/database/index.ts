@@ -41,6 +41,7 @@ export async function initializeDatabase(): Promise<void> {
     await createRefreshTokensTable();
     await createInvitesTable();
     await createPasswordResetOtpsTable();
+    await createPaymentTables();
   }
 }
 
@@ -214,6 +215,7 @@ async function createOrdersTable(): Promise<void> {
       item_name VARCHAR(255) NOT NULL,
       item_description TEXT,
       portion_size VARCHAR(255) NOT NULL,
+      portion_serving VARCHAR(255),
       price DECIMAL(10,2) NOT NULL CHECK (price > 0),
       category VARCHAR(255),
       packaging VARCHAR(255),
@@ -221,7 +223,7 @@ async function createOrdersTable(): Promise<void> {
       created_at TIMESTAMP DEFAULT NOW()
     );
     
-    -- Add category and packaging columns if they don't exist (for existing databases)
+    -- Add category, packaging, and portion_serving columns if they don't exist (for existing databases)
     DO $$ 
     BEGIN
       IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'order_items' AND column_name = 'category') THEN
@@ -229,6 +231,9 @@ async function createOrdersTable(): Promise<void> {
       END IF;
       IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'order_items' AND column_name = 'packaging') THEN
         ALTER TABLE order_items ADD COLUMN packaging VARCHAR(255);
+      END IF;
+      IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'order_items' AND column_name = 'portion_serving') THEN
+        ALTER TABLE order_items ADD COLUMN portion_serving VARCHAR(255);
       END IF;
     END $$;
     
@@ -613,6 +618,59 @@ async function createPasswordResetOtpsTable(): Promise<void> {
     console.log('Password reset OTPs table created successfully');
   } catch (error) {
     console.error('Error creating password_reset_otps table:', error);
+  }
+}
+
+async function createPaymentTables(): Promise<void> {
+  const createTableQuery = `
+    CREATE TABLE IF NOT EXISTS payment_transactions (
+      id SERIAL PRIMARY KEY,
+      order_id INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+      square_payment_id VARCHAR(255) NOT NULL UNIQUE,
+      amount DECIMAL(10,2) NOT NULL,
+      currency VARCHAR(3) NOT NULL DEFAULT 'USD',
+      payment_method VARCHAR(50) NOT NULL CHECK (payment_method IN ('card', 'ACH', 'cash_app_pay', 'afterpay', 'other')),
+      card_last_4 VARCHAR(4),
+      card_brand VARCHAR(50),
+      status VARCHAR(50) NOT NULL CHECK (status IN ('completed', 'failed', 'refunded', 'pending')),
+      square_customer_id VARCHAR(255),
+      square_card_id VARCHAR(255),
+      error_message TEXT,
+      processed_by INTEGER NOT NULL REFERENCES users(id),
+      created_at TIMESTAMP DEFAULT NOW(),
+      updated_at TIMESTAMP DEFAULT NOW()
+    );
+    
+    CREATE TABLE IF NOT EXISTS stored_cards (
+      id SERIAL PRIMARY KEY,
+      client_id INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+      square_customer_id VARCHAR(255) NOT NULL,
+      square_card_id VARCHAR(255) NOT NULL,
+      card_last_4 VARCHAR(4) NOT NULL,
+      card_brand VARCHAR(50) NOT NULL,
+      card_exp_month INTEGER,
+      card_exp_year INTEGER,
+      is_default BOOLEAN DEFAULT false,
+      created_at TIMESTAMP DEFAULT NOW(),
+      updated_at TIMESTAMP DEFAULT NOW(),
+      UNIQUE(square_customer_id, square_card_id)
+    );
+    
+    CREATE INDEX IF NOT EXISTS idx_payment_transactions_order_id ON payment_transactions(order_id);
+    CREATE INDEX IF NOT EXISTS idx_payment_transactions_square_payment_id ON payment_transactions(square_payment_id);
+    CREATE INDEX IF NOT EXISTS idx_payment_transactions_status ON payment_transactions(status);
+    CREATE INDEX IF NOT EXISTS idx_payment_transactions_processed_by ON payment_transactions(processed_by);
+    CREATE INDEX IF NOT EXISTS idx_payment_transactions_created_at ON payment_transactions(created_at);
+    CREATE INDEX IF NOT EXISTS idx_stored_cards_client_id ON stored_cards(client_id);
+    CREATE INDEX IF NOT EXISTS idx_stored_cards_square_customer_id ON stored_cards(square_customer_id);
+    CREATE INDEX IF NOT EXISTS idx_stored_cards_is_default ON stored_cards(is_default);
+  `;
+  
+  try {
+    await dbAdapter!.query(createTableQuery);
+    console.log('Payment tables created successfully');
+  } catch (error) {
+    console.error('Error creating payment tables:', error);
   }
 }
 

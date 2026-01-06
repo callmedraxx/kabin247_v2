@@ -25,7 +25,7 @@ services:
       SMTP_PORT: ${SMTP_PORT:-587}
       SMTP_USERNAME: ${SMTP_USERNAME}
       SMTP_PASSWORD: ${SMTP_PASSWORD}
-      SMTP_EMAIL: ${SMTP_EMAIL:-noreply@kabin247.com}
+      SMTP_EMAIL: ${SMTP_EMAIL:-inflight@kabin247.com}
       FRONTEND_URL: ${FRONTEND_URL:-https://app.kabin247.com}
       JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET}
       JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRETn}
@@ -38,6 +38,11 @@ services:
       DKIM_SELECTOR: ${DKIM_SELECTOR:-default}
       DKIM_DOMAIN: ${DKIM_DOMAIN:-kabin247.com}
       DKIM_PRIVATE_KEY_PATH: ${DKIM_PRIVATE_KEY_PATH:-src/config/dkim/default.private.pem}
+      # Square Payment configuration
+      SQUARE_APPLICATION_ID: ${SQUARE_APPLICATION_ID}
+      SQUARE_ACCESS_TOKEN: ${SQUARE_ACCESS_TOKEN}
+      SQUARE_LOCATION_ID: ${SQUARE_LOCATION_ID}
+      SQUARE_ENVIRONMENT: ${SQUARE_ENVIRONMENT:-sandbox}
     depends_on:
       postgres:
         condition: service_healthy

@@ -186,6 +186,7 @@ export class OrderService {
         item_name: menuItem.item_name,
         item_description: item.item_description ?? menuItem.item_description ?? undefined,
         portion_size: item.portion_size,
+        portion_serving: item.portion_serving ?? undefined,
         price: resolvedPrice,
         category: item.category ?? undefined,
         packaging: item.packaging ?? undefined,
@@ -389,32 +390,56 @@ export class OrderService {
     const filename = `order_${order.order_number}.pdf`;
     const mimeType = 'application/pdf';
 
-    if (!regenerate) {
+    // PDF A should only be used for: awaiting_client_approval, paid, delivered
+    // If status is caterer_confirmed or other statuses, this method shouldn't be called
+    // But if it is, we should regenerate to ensure correct format
+    const pdfAStatuses = ['awaiting_client_approval', 'paid', 'delivered'];
+    const shouldUsePdfA = pdfAStatuses.includes(order.status);
+    
+    // Always regenerate for delivered and caterer_confirmed statuses to ensure correct format
+    // This handles cases where old cached PDFs were generated with wrong format
+    // For delivered status, we MUST use PDF A, so always regenerate to avoid old PDF B cache
+    const forceRegenerateStatuses = ['delivered', 'caterer_confirmed'];
+    const shouldForceRegenerate = forceRegenerateStatuses.includes(order.status);
+
+    // For delivered status, ALWAYS regenerate to ensure PDF A format (never use cached PDF B)
+    // For caterer_confirmed, also always regenerate to ensure correct format
+    if (order.status === 'delivered') {
+      // Delivered status MUST use PDF A - never use cache as it might be old PDF B
+      // Always regenerate to ensure correct format
+    } else if (!regenerate && !shouldForceRegenerate) {
       const existing = await this.repository.getPdf(orderId);
       if (existing) {
-        // Check if order was updated after PDF was generated - if so, regenerate
-        const orderUpdatedAt = order.updated_at ? new Date(order.updated_at).getTime() : 0;
-        const pdfUpdatedAt = existing.updated_at ? new Date(existing.updated_at).getTime() : 0;
-        const now = Date.now();
-        
-        // For orders with client_id or airport_id, regenerate if PDF is older than 1 hour
-        // This ensures PDFs have the latest joined data after code fixes
-        const hasReferences = !!(order.client_id || order.airport_id);
-        const pdfAge = now - pdfUpdatedAt;
-        const oneHour = 3600000; // 1 hour in milliseconds
-        
-        // Use cached PDF only if:
-        // 1. PDF is newer than or equal to order's last update, AND
-        // 2. If order has references, PDF must be less than 1 hour old
-        if (pdfUpdatedAt >= orderUpdatedAt && (!hasReferences || pdfAge < oneHour)) {
-          return {
-            buffer: existing.pdf_data,
-            filename: existing.filename || filename,
-            mimeType: existing.mime_type || mimeType,
-            order,
-          };
+        // Always regenerate if status doesn't match PDF A format
+        // This ensures correct PDF format after routing logic changes
+        if (!shouldUsePdfA) {
+          // Status changed, need to regenerate with correct format
+          // Fall through to regeneration
+        } else {
+          // Check if order was updated after PDF was generated - if so, regenerate
+          const orderUpdatedAt = order.updated_at ? new Date(order.updated_at).getTime() : 0;
+          const pdfUpdatedAt = existing.updated_at ? new Date(existing.updated_at).getTime() : 0;
+          const now = Date.now();
+          
+          // For orders with client_id or airport_id, regenerate if PDF is older than 1 hour
+          // This ensures PDFs have the latest joined data after code fixes
+          const hasReferences = !!(order.client_id || order.airport_id);
+          const pdfAge = now - pdfUpdatedAt;
+          const oneHour = 3600000; // 1 hour in milliseconds
+          
+          // Use cached PDF only if:
+          // 1. PDF is newer than or equal to order's last update, AND
+          // 2. If order has references, PDF must be less than 1 hour old
+          if (pdfUpdatedAt >= orderUpdatedAt && (!hasReferences || pdfAge < oneHour)) {
+            return {
+              buffer: existing.pdf_data,
+              filename: existing.filename || filename,
+              mimeType: existing.mime_type || mimeType,
+              order,
+            };
+          }
+          // Need to regenerate, fall through
         }
-        // Need to regenerate, fall through
       }
     }
 

@@ -171,6 +171,24 @@ export function generateOrderHTML(order: any): string {
   const statusColor = statusColors[order.status] || c.secondary;
   const statusBg = statusBackgrounds[order.status] || c.background;
   
+  // Calculate correct subtotal from items (price * qty for each item)
+  const calculatedSubtotal = (order.items || []).reduce((sum: number, item: any) => {
+    const qty = parseFloat(item.portion_size) || 1;
+    const price = parseFloat(item.price) || 0;
+    return sum + (price * qty);
+  }, 0);
+  
+  // Calculate correct total
+  const calculatedTotal = calculatedSubtotal + 
+    (parseFloat(order.delivery_fee) || 0) +
+    (parseFloat(order.service_charge) || 0) +
+    (parseFloat(order.coordination_fee) || 0) +
+    (parseFloat(order.airport_fee) || 0) +
+    (parseFloat(order.fbo_fee) || 0) +
+    (parseFloat(order.shopping_fee) || 0) +
+    (parseFloat(order.restaurant_pickup_fee) || 0) +
+    (parseFloat(order.airport_pickup_fee) || 0);
+  
   const clientName = decodeHtmlEntitiesForText(order.client?.full_name || order.client_name || '');
   const clientCompany = decodeHtmlEntitiesForText(order.client?.company_name || '');
   const clientAddr = decodeHtmlEntitiesForText(order.client?.full_address || '');
@@ -193,36 +211,36 @@ export function generateOrderHTML(order: any): string {
     const borderColor = i % 2 === 0 ? '#e5e7eb' : '#e5e7eb';
     // Preserve newlines in description by converting to <br/> tags
     const descText = item.item_description ? escapeHtml(item.item_description).replace(/\n/g, '<br/>') : '';
-    const desc = descText ? `<div style="font-family:'Times New Roman',Times,serif;font-size:13px;color:${c.textLight};margin-top:4px;line-height:1.4">${descText}</div>` : '';
-    const packagingTag = item.packaging ? `<div style="font-family:'Times New Roman',Times,serif;font-size:13px;font-weight:bold;color:#0369a1;margin-top:4px">${escapeHtml(item.packaging)}</div>` : '';
+    const desc = descText ? `<div style="font-family:'Times New Roman',Times,serif;font-size:11px;color:${c.textLight};margin-top:2px;line-height:1.3">${descText}</div>` : '';
+    const packagingTag = item.packaging ? `<div style="font-family:'Times New Roman',Times,serif;font-size:11px;font-weight:bold;color:#0369a1;margin-top:2px">${escapeHtml(item.packaging)}</div>` : '';
     const qty = parseFloat(item.portion_size) || 1;
     return `<tr style="background:${bg}">
-      <td style="padding:8px 16px;border-bottom:1px solid ${borderColor};width:54%">
-        <div style="font-family:'Times New Roman',Times,serif;font-size:16px;font-weight:600;color:${c.primary}">${escapeHtml(item.item_name)}</div>
+      <td style="padding:6px 12px;border-bottom:1px solid ${borderColor};width:54%">
+        <div style="font-family:'Times New Roman',Times,serif;font-size:14px;font-weight:600;color:${c.primary}">${escapeHtml(item.item_name)}</div>
         ${desc}
         ${packagingTag}
       </td>
-      <td style="padding:8px 6px;text-align:center;border-bottom:1px solid ${borderColor};width:10%;font-family:'Times New Roman',Times,serif;font-size:12px">${escapeHtml(item.portion_size)}</td>
-      <td style="padding:8px 6px;text-align:right;border-bottom:1px solid ${borderColor};width:18%;font-family:'Times New Roman',Times,serif;font-size:12px;color:${c.textLight}">$${formatPrice(item.price/qty)}</td>
-      <td style="padding:8px 6px;text-align:right;border-bottom:1px solid ${borderColor};width:18%;font-family:'Times New Roman',Times,serif;font-size:12px;font-weight:600">$${formatPrice(item.price)}</td>
+      <td style="padding:6px 4px;text-align:center;border-bottom:1px solid ${borderColor};width:10%;font-family:'Times New Roman',Times,serif;font-size:11px">${escapeHtml(item.portion_size)}</td>
+      <td style="padding:6px 4px;text-align:right;border-bottom:1px solid ${borderColor};width:18%;font-family:'Times New Roman',Times,serif;font-size:11px;color:${c.textLight}">$${formatPrice(item.price)}</td>
+      <td style="padding:6px 4px;text-align:right;border-bottom:1px solid ${borderColor};width:18%;font-family:'Times New Roman',Times,serif;font-size:11px;font-weight:600">$${formatPrice(item.price * qty)}</td>
     </tr>`;
   }).join('');
 
   // Use URL for logo so frontend can fetch it (logoUrl can be overridden via order._logoUrl)
   const logoUrl = order._logoUrl || '/assets/logo.png';
-  const logoImg = `<img src="${escapeHtml(logoUrl)}" style="height:200px;margin-bottom:12px" alt="${escapeHtml(s.company.name)}" onerror="this.style.display='none';this.nextElementSibling.style.display='block'"/><div style="display:none;font-size:24px;font-weight:700;color:${c.primary};margin-bottom:12px">${escapeHtml(s.company.name)}</div>`;
+  const logoImg = `<img src="${escapeHtml(logoUrl)}" style="height:100px;margin-bottom:6px" alt="${escapeHtml(s.company.name)}" onerror="this.style.display='none';this.nextElementSibling.style.display='block'"/><div style="display:none;font-size:20px;font-weight:700;color:${c.primary};margin-bottom:6px">${escapeHtml(s.company.name)}</div>`;
 
   // Add PAID stamp if status is paid
   const paidStamp = order.status === 'paid' ? `<div style="position:fixed;top:50%;left:50%;transform:translate(-50%,-50%) rotate(-45deg);font-size:120px;font-weight:900;color:rgba(16,185,129,0.15);z-index:1000;pointer-events:none;font-family:'Times New Roman',Times,serif;letter-spacing:20px">PAID</div>` : '';
 
   return `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Invoice #${displayNum}</title>
-<style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;background:#f1f5f9;padding:20px;color:${c.text}}.inv{max-width:800px;margin:0 auto;background:#fff;box-shadow:0 4px 6px -1px rgba(0,0,0,.1);border-radius:12px;overflow:hidden}.hdr{display:flex;justify-content:space-between;align-items:flex-start;padding:32px 40px;border-bottom:1px solid ${c.borderLight}}.co-info{font-size:12px;color:${c.textLight};line-height:1.5}.inv-num{font-size:24px;font-weight:700;color:${c.primary};margin-bottom:4px}.inv-sub{font-size:13px;color:${c.textLight};text-transform:uppercase;letter-spacing:.5px;margin-bottom:12px}.badge{display:inline-block;padding:6px 16px;border-radius:20px;font-size:12px;font-weight:600;background:${statusBg};color:${statusColor}}.det{display:grid;grid-template-columns:1fr 1fr;gap:40px;padding:32px 40px;background:${c.background}}.det h3{font-size:11px;text-transform:uppercase;letter-spacing:1px;color:${c.textMuted};margin-bottom:16px;font-weight:600}.det-row{display:flex;margin-bottom:10px;font-size:13px}.det-lbl{width:100px;color:${c.textLight}}.det-val{font-weight:500}.bt-name{font-size:16px;font-weight:600;margin-bottom:8px}.bt-co{font-size:13px;color:${c.primary};font-weight:500;margin-bottom:8px}.bt-det{font-size:12px;color:${c.textLight};line-height:1.6}.items{padding:32px 40px}table{width:100%;border-collapse:separate;border-spacing:0;border-radius:8px;overflow:hidden;border:1px solid ${c.border}}thead th{background:${c.primaryDark};color:#fff;padding:10px 16px;font-family:'Times New Roman',Times,serif;font-size:12px;font-weight:bold;text-transform:uppercase;letter-spacing:.5px;text-align:left}thead th:nth-child(2),thead th:nth-child(3){text-align:center}thead th:last-child{text-align:right}.tots{padding:0 40px 32px;display:flex;justify-content:flex-end}.tots-box{width:280px;background:${c.background};border-radius:8px;padding:20px;border:1px solid ${c.borderLight}}.tot-row{display:flex;justify-content:space-between;padding:8px 0;font-size:13px;color:${c.textLight}}.tot-row.grand{border-top:2px solid ${c.border};margin-top:8px;padding-top:16px;font-size:16px;font-weight:700;color:${c.primary}}.ftr{padding:32px 40px;background:${c.background};border-top:1px solid ${c.borderLight};text-align:center}.ftr-msg{font-size:13px;color:${c.textLight};line-height:1.8;margin-bottom:16px}.ftr-sig{font-size:14px;font-weight:600;color:${c.primary};margin-bottom:8px}.ftr-tag{font-size:12px;color:${c.textMuted};font-style:italic}.inst{padding:0 40px 32px}.inst-box{background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:20px}.inst-box h4{color:#b45309;font-size:13px;font-weight:600;margin-bottom:12px}.inst-item{font-size:12px;color:#78350f;margin-bottom:8px}</style></head>
+<style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;background:#f1f5f9;padding:12px;color:${c.text}}.inv{max-width:800px;margin:0 auto;background:#fff;box-shadow:0 4px 6px -1px rgba(0,0,0,.1);border-radius:8px;overflow:hidden}.hdr{display:flex;justify-content:space-between;align-items:flex-start;padding:16px 28px;border-bottom:1px solid ${c.borderLight}}.co-info{font-size:11px;color:${c.textLight};line-height:1.4}.inv-num{font-size:18px;font-weight:700;color:${c.primary};margin-bottom:2px}.inv-sub{font-size:11px;color:${c.textLight};text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px}.badge{display:inline-block;padding:4px 12px;border-radius:16px;font-size:11px;font-weight:600;background:${statusBg};color:${statusColor}}.det{display:grid;grid-template-columns:1fr 1fr;gap:24px;padding:16px 28px;background:${c.background}}.det h3{font-size:10px;text-transform:uppercase;letter-spacing:1px;color:${c.textMuted};margin-bottom:10px;font-weight:600}.det-row{display:flex;margin-bottom:6px;font-size:12px}.det-lbl{width:90px;color:${c.textLight}}.det-val{font-weight:500}.bt-name{font-size:14px;font-weight:600;margin-bottom:4px}.bt-co{font-size:12px;color:${c.primary};font-weight:500;margin-bottom:4px}.bt-det{font-size:11px;color:${c.textLight};line-height:1.5}.items{padding:16px 28px}table{width:100%;border-collapse:separate;border-spacing:0;border-radius:6px;overflow:hidden;border:1px solid ${c.border}}thead th{background:${c.primaryDark};color:#fff;padding:8px 12px;font-family:'Times New Roman',Times,serif;font-size:11px;font-weight:bold;text-transform:uppercase;letter-spacing:.5px;text-align:left}thead th:nth-child(2),thead th:nth-child(3){text-align:center}thead th:last-child{text-align:right}.tots{padding:0 28px 16px;display:flex;justify-content:flex-end}.tots-box{width:260px;background:${c.background};border-radius:6px;padding:14px;border:1px solid ${c.borderLight}}.tot-row{display:flex;justify-content:space-between;padding:5px 0;font-size:12px;color:${c.textLight}}.tot-row.grand{border-top:2px solid ${c.border};margin-top:6px;padding-top:10px;font-size:14px;font-weight:700;color:${c.primary}}.ftr{padding:14px 28px;background:${c.background};border-top:1px solid ${c.borderLight};text-align:center}.ftr-msg{font-size:11px;color:${c.textLight};line-height:1.6}.ftr-sig{font-size:12px;font-weight:600;color:${c.primary};margin-bottom:4px}.ftr-tag{font-size:11px;color:${c.textMuted};font-style:italic}.inst{padding:0 28px 16px}.inst-box{background:#fffbeb;border:1px solid #fcd34d;border-radius:6px;padding:12px}.inst-box h4{color:#b45309;font-size:11px;font-weight:600;margin-bottom:8px}.inst-item{font-size:11px;color:#78350f;margin-bottom:4px}</style></head>
 <body><div class="inv">
 <div class="hdr"><div>${logoImg}<div class="co-info">${escapeHtml(s.company.address)}<br/><b>Phone | ${escapeHtml(s.company.phone)}</b></div></div><div style="text-align:right"><div class="inv-num">INVOICE #${escapeHtml(displayNum)}</div><div class="inv-sub">Inflight Catering Order</div><span class="badge">${escapeHtml(statusLabel)}</span></div></div>
-<div class="det"><div><h3>Bill To</h3><div class="bt-name">${escapeHtml(clientName)}</div>${clientCompany ? `<div class="bt-co">${escapeHtml(clientCompany)}</div>` : ''}<div class="bt-det" style="word-wrap:break-word;overflow-wrap:break-word;max-width:250px">${clientAddr?escapeHtml(clientAddr).replace(/\n/g, '<br/>')+'<br/>':''}${clientEmail?escapeHtml(clientEmail)+'<br/>':''}${clientPhone?escapeHtml(clientPhone):''}</div></div><div><h3>Delivery Details</h3><div class="det-row"><span class="det-lbl">Date & Time:</span><span class="det-val">${escapeHtml(formatDate(order.delivery_date))} &nbsp; ${escapeHtml(formatTime(order.delivery_time))}</span></div><div class="det-row"><span class="det-lbl">Airport Code:</span><span class="det-val">${escapeHtml(airportCode)}</span></div><div class="det-row"><span class="det-lbl">FBO:</span><span class="det-val">${escapeHtml(fboName)}</span></div><div class="det-row"><span class="det-lbl">Tail#:</span><span class="det-val">${escapeHtml(order.aircraft_tail_number||'')}</span></div>${dietary?`<div class="det-row"><span class="det-lbl">Dietary:</span><span class="det-val">${escapeHtml(dietary)}</span></div>`:''}</div></div>
+<div class="det"><div><h3>Bill To</h3><div class="bt-name">${escapeHtml(clientName)}</div>${clientCompany ? `<div class="bt-co">${escapeHtml(clientCompany)}</div>` : ''}<div class="bt-det" style="word-wrap:break-word;overflow-wrap:break-word;max-width:250px">${clientAddr ? escapeHtml(clientAddr).replace(/\n/g, '<br/>') + '<br/>' : ''}${clientEmail ? `<div style="margin-top:4px">${escapeHtml(clientEmail)}</div>` : ''}${clientPhone ? `<div>${escapeHtml(clientPhone)}</div>` : ''}</div></div><div><h3>Delivery Details</h3><div class="det-row"><span class="det-lbl">Date & Time:</span><span class="det-val">${escapeHtml(formatDate(order.delivery_date))} &nbsp; ${escapeHtml(formatTime(order.delivery_time))}</span></div><div class="det-row"><span class="det-lbl">Airport Code:</span><span class="det-val">${escapeHtml(airportCode)}</span></div><div class="det-row"><span class="det-lbl">FBO:</span><span class="det-val">${escapeHtml(fboName)}</span></div><div class="det-row"><span class="det-lbl">Tail#:</span><span class="det-val">${escapeHtml(order.aircraft_tail_number||'')}</span></div>${dietary?`<div class="det-row"><span class="det-lbl">Dietary:</span><span class="det-val">${escapeHtml(dietary)}</span></div>`:''}</div></div>
 ${(order.reheating_instructions||order.packaging_instructions)?`<div class="inst"><div class="inst-box"><h4>⚠️ Special Instructions</h4>${order.reheating_instructions?`<div class="inst-item"><b>Reheating:</b> ${escapeHtml(order.reheating_instructions)}</div>`:''}${order.packaging_instructions?`<div class="inst-item"><b>Packaging:</b> ${escapeHtml(order.packaging_instructions)}</div>`:''}</div></div>`:''}
 <div class="items"><table><thead><tr><th style="font-size:12px">Item & Description</th><th style="text-align:center;font-size:10px">Qty</th><th style="text-align:right;font-size:10px">Unit Cost</th><th style="text-align:right;font-size:10px">Total</th></tr></thead><tbody>${itemsHTML}</tbody></table></div>
-<div class="tots"><div class="tots-box"><div class="tot-row"><span>Subtotal:</span><span>$${formatPrice(order.subtotal)}</span></div>${parseFloat(order.delivery_fee || 0)>0?`<div class="tot-row"><span>${escapeHtml(airportCode)} Delivery Fee:</span><span>$${formatPrice(order.delivery_fee)}</span></div>`:''}${parseFloat(order.service_charge || 0)>0?`<div class="tot-row"><span>Service Charge:</span><span>$${formatPrice(order.service_charge)}</span></div>`:''}${parseFloat(order.coordination_fee || 0)>0?`<div class="tot-row"><span>Coordination Fee:</span><span>$${formatPrice(order.coordination_fee)}</span></div>`:''}${parseFloat(order.airport_fee || 0)>0?`<div class="tot-row"><span>Airport Fee:</span><span>$${formatPrice(order.airport_fee)}</span></div>`:''}${parseFloat(order.fbo_fee || 0)>0?`<div class="tot-row"><span>FBO Fee:</span><span>$${formatPrice(order.fbo_fee)}</span></div>`:''}${parseFloat(order.shopping_fee || 0)>0?`<div class="tot-row"><span>Shopping Fee:</span><span>$${formatPrice(order.shopping_fee)}</span></div>`:''}${parseFloat(order.restaurant_pickup_fee || 0)>0?`<div class="tot-row"><span>Restaurant Pickup Fee:</span><span>$${formatPrice(order.restaurant_pickup_fee)}</span></div>`:''}${parseFloat(order.airport_pickup_fee || 0)>0?`<div class="tot-row"><span>Airport Pickup Fee:</span><span>$${formatPrice(order.airport_pickup_fee)}</span></div>`:''}<div class="tot-row grand"><span>Total:</span><span>$${formatPrice(order.total)}</span></div></div></div>
+<div class="tots"><div class="tots-box"><div class="tot-row"><span>Subtotal:</span><span>$${formatPrice(calculatedSubtotal)}</span></div>${parseFloat(order.delivery_fee || 0)>0?`<div class="tot-row"><span>${escapeHtml(airportCode)} Delivery Fee:</span><span>$${formatPrice(order.delivery_fee)}</span></div>`:''}${parseFloat(order.service_charge || 0)>0?`<div class="tot-row"><span>Service Charge:</span><span>$${formatPrice(order.service_charge)}</span></div>`:''}${parseFloat(order.coordination_fee || 0)>0?`<div class="tot-row"><span>Coordination Fee:</span><span>$${formatPrice(order.coordination_fee)}</span></div>`:''}${parseFloat(order.airport_fee || 0)>0?`<div class="tot-row"><span>Airport Fee:</span><span>$${formatPrice(order.airport_fee)}</span></div>`:''}${parseFloat(order.fbo_fee || 0)>0?`<div class="tot-row"><span>FBO Fee:</span><span>$${formatPrice(order.fbo_fee)}</span></div>`:''}${parseFloat(order.shopping_fee || 0)>0?`<div class="tot-row"><span>Shopping Fee:</span><span>$${formatPrice(order.shopping_fee)}</span></div>`:''}${parseFloat(order.restaurant_pickup_fee || 0)>0?`<div class="tot-row"><span>Restaurant Pickup Fee:</span><span>$${formatPrice(order.restaurant_pickup_fee)}</span></div>`:''}${parseFloat(order.airport_pickup_fee || 0)>0?`<div class="tot-row"><span>Airport Pickup Fee:</span><span>$${formatPrice(order.airport_pickup_fee)}</span></div>`:''}<div class="tot-row grand"><span>Total:</span><span>$${formatPrice(calculatedTotal)}</span></div></div></div>
 <div class="ftr"><div class="ftr-msg">Email: Inflight@Kabin247.com &nbsp;&nbsp;&nbsp; Phone: +1-813-331-5667 &nbsp; Address: 4520 W. Oakellar Ave, Unit 13061, Tampa, FL 33611</div></div>
 ${paidStamp}</div></body></html>`;
 }
@@ -232,6 +250,24 @@ export function generateOrderPDF(order: any, styles: PDFStyleConfig = defaultPDF
   const displayNum = getDisplayOrderNumber(order);
   const statusLabel = getStatusLabel(order.status);
   const statusColor = statusColors[order.status] || c.secondary;
+
+  // Calculate correct subtotal from items (price * qty for each item)
+  const calculatedSubtotal = (order.items || []).reduce((sum: number, item: any) => {
+    const qty = parseFloat(item.portion_size) || 1;
+    const price = parseFloat(item.price) || 0;
+    return sum + (price * qty);
+  }, 0);
+  
+  // Calculate correct total
+  const calculatedTotal = calculatedSubtotal + 
+    (parseFloat(order.delivery_fee) || 0) +
+    (parseFloat(order.service_charge) || 0) +
+    (parseFloat(order.coordination_fee) || 0) +
+    (parseFloat(order.airport_fee) || 0) +
+    (parseFloat(order.fbo_fee) || 0) +
+    (parseFloat(order.shopping_fee) || 0) +
+    (parseFloat(order.restaurant_pickup_fee) || 0) +
+    (parseFloat(order.airport_pickup_fee) || 0);
 
   const doc = new PDFDocument({ margin: styles.spacing.margin, size: styles.layout.pageSize, info: { Title: `Invoice ${displayNum}`, Author: styles.company.name, Subject: 'Inflight Catering Order' }});
 
@@ -378,8 +414,8 @@ export function generateOrderPDF(order: any, styles: PDFStyleConfig = defaultPDF
     }
     doc.fillColor(c.text).fontSize(15).font(styles.fonts.body).text(item.portion_size || '', m + cols.item, ty, { width: cols.qty, align: 'center' });
     const qty = parseFloat(item.portion_size) || 1;
-    doc.fillColor(c.textLight).text(`$${formatPrice(item.price / qty)}`, m + cols.item + cols.qty, ty, { width: cols.unit, align: 'right' });
-    doc.fillColor(c.text).font(styles.fonts.bold).text(`$${formatPrice(item.price)}`, m + cols.item + cols.qty + cols.unit, ty, { width: cols.total - 12, align: 'right' });
+    doc.fillColor(c.textLight).text(`$${formatPrice(item.price)}`, m + cols.item + cols.qty, ty, { width: cols.unit, align: 'right' });
+    doc.fillColor(c.text).font(styles.fonts.bold).text(`$${formatPrice(item.price * qty)}`, m + cols.item + cols.qty + cols.unit, ty, { width: cols.total - 12, align: 'right' });
     y += rh;
   });
 
@@ -393,7 +429,7 @@ export function generateOrderPDF(order: any, styles: PDFStyleConfig = defaultPDF
 
   let ty = y + 18;
   doc.fillColor(c.textLight).fontSize(15).font(styles.fonts.body);
-  doc.text('Subtotal:', totX + 15, ty).text(`$${formatPrice(order.subtotal)}`, totX + 15, ty, { width: totW - 30, align: 'right' });
+  doc.text('Subtotal:', totX + 15, ty).text(`$${formatPrice(calculatedSubtotal)}`, totX + 15, ty, { width: totW - 30, align: 'right' });
   ty += 20;
   if (parseFloat(order.delivery_fee || 0) > 0) { doc.text(`${airportCode} Delivery Fee:`, totX + 15, ty).text(`$${formatPrice(order.delivery_fee)}`, totX + 15, ty, { width: totW - 30, align: 'right' }); ty += 20; }
   if (parseFloat(order.service_charge || 0) > 0) { doc.text('Service Charge:', totX + 15, ty).text(`$${formatPrice(order.service_charge)}`, totX + 15, ty, { width: totW - 30, align: 'right' }); ty += 20; }
@@ -407,7 +443,7 @@ export function generateOrderPDF(order: any, styles: PDFStyleConfig = defaultPDF
   doc.moveTo(totX + 15, ty).lineTo(totX + totW - 15, ty).strokeColor(c.border).lineWidth(1.5).stroke();
   ty += 14;
   doc.fillColor(c.primary).fontSize(21).font(styles.fonts.bold);
-  doc.text('Total:', totX + 15, ty).text(`$${formatPrice(order.total)}`, totX + 15, ty, { width: totW - 30, align: 'right' });
+  doc.text('Total:', totX + 15, ty).text(`$${formatPrice(calculatedTotal)}`, totX + 15, ty, { width: totW - 30, align: 'right' });
 
   y += totH + 20;
 
@@ -510,6 +546,7 @@ function getOrderTypeTitle(orderType: string): string {
   return 'CATERING ORDER';
 }
 
+
 /**
  * Group items by category for PDF B
  */
@@ -544,24 +581,67 @@ export function generateOrderHTMLB(order: any, recipientType: 'client' | 'catere
   const statusBg = statusBackgrounds[order.status] || c.background;
   
   // Check if this PDF is for a caterer (when status is awaiting_quote or awaiting_caterer, or explicitly set)
-  const isForCaterer = recipientType === 'caterer' || (order.status === 'awaiting_quote' || order.status === 'awaiting_caterer');
+  // Exception: caterer_confirmed status with client recipient should use client info and show status
+  // Explicitly check: if caterer_confirmed with client recipient, use client info (isForCaterer = false)
+  let isForCaterer: boolean;
+  if (order.status === 'caterer_confirmed' && recipientType === 'client') {
+    isForCaterer = false; // Use client info for caterer_confirmed with client recipient
+  } else if (recipientType === 'caterer') {
+    isForCaterer = true; // Explicitly set to caterer
+  } else if (order.status === 'awaiting_quote' || order.status === 'awaiting_caterer') {
+    isForCaterer = true; // Use company info for awaiting_quote/awaiting_caterer
+  } else {
+    isForCaterer = false; // Default to client info for other statuses
+  }
+  
+  // Debug logging (remove after testing)
+  console.log('[PDF B Debug]', {
+    orderNumber: displayNum,
+    status: order.status,
+    recipientType,
+    isForCaterer,
+    hasClient: !!order.client,
+    clientId: order.client_id,
+    clientName: order.client_name,
+    clientFullName: order.client?.full_name
+  });
   
   // For caterers (awaiting_quote or awaiting_caterer status), use Kabin247 info instead of client info
-  const clientName = isForCaterer 
-    ? 'Kabin247' 
-    : decodeHtmlEntitiesForText(order.client?.full_name || order.client_name || '');
-  const clientCompany = isForCaterer 
-    ? '' 
-    : decodeHtmlEntitiesForText(order.client?.company_name || '');
-  const clientAddr = isForCaterer 
-    ? decodeHtmlEntitiesForText(s.company.address) 
-    : decodeHtmlEntitiesForText(order.client?.full_address || '');
-  const clientEmail = isForCaterer 
-    ? 'accounting@Kabin247.com' 
-    : decodeHtmlEntitiesForText(order.client?.email || '');
-  const clientPhone = isForCaterer 
-    ? '' 
-    : decodeHtmlEntitiesForText(order.client?.contact_number || '');
+  // For caterer_confirmed with client recipient, use client info
+  // If client data is not available, fall back to order.client_name but only if it's not "Kabin247"
+  let clientName: string;
+  let clientCompany: string;
+  let clientAddr: string;
+  let clientEmail: string;
+  let clientPhone: string;
+  
+  if (isForCaterer) {
+    clientName = 'Kabin247';
+    clientCompany = '';
+    clientAddr = decodeHtmlEntitiesForText(s.company.address);
+    clientEmail = 'accounting@Kabin247.com';
+    clientPhone = '';
+  } else {
+    // Use client info from order.client if available, otherwise fall back to order.client_name
+    // Priority: order.client.full_name > order.client_name (if not "Kabin247")
+    if (order.client?.full_name) {
+      clientName = decodeHtmlEntitiesForText(order.client.full_name);
+      clientCompany = decodeHtmlEntitiesForText(order.client.company_name || '');
+      clientAddr = decodeHtmlEntitiesForText(order.client.full_address || '');
+      clientEmail = decodeHtmlEntitiesForText(order.client.email || '');
+      clientPhone = decodeHtmlEntitiesForText(order.client.contact_number || '');
+    } else {
+      // Fallback to order.client_name if client object not available
+      const orderClientName = order.client_name || '';
+      clientName = decodeHtmlEntitiesForText(
+        orderClientName && orderClientName !== 'Kabin247' ? orderClientName : ''
+      );
+      clientCompany = '';
+      clientAddr = '';
+      clientEmail = '';
+      clientPhone = '';
+    }
+  }
   // Use airport_details codes if available, otherwise fall back to order.airport field (which may contain code or name)
   const airportCode = decodeHtmlEntitiesForText(
     order.airport_details?.airport_code_iata || 
@@ -580,32 +660,37 @@ export function generateOrderHTMLB(order: any, recipientType: 'client' | 'catere
     const borderColor = i % 2 === 0 ? '#e5e7eb' : '#e5e7eb';
     // Preserve newlines in description by converting to <br/> tags
     const descText = item.item_description ? escapeHtml(item.item_description).replace(/\n/g, '<br/>') : '';
-    const desc = descText ? `<div style="font-family:'Times New Roman',Times,serif;font-size:14px;color:${c.textLight};margin-top:4px;line-height:1.4">${descText}</div>` : '';
-    const portionSize = item.portion_size || '';
+    const desc = descText ? `<div style="font-family:'Times New Roman',Times,serif;font-size:11px;color:${c.textLight};margin-top:2px;line-height:1.3">${descText}</div>` : '';
+    // portion_serving is the size (can be "200ml", "500mg", etc.), portion_size is the quantity (purely number)
+    // If portion_serving is "No#" or empty, fall back to portion_size
+    const portionSize = (item.portion_serving && item.portion_serving !== 'No#') ? item.portion_serving : (item.portion_size || '');
+    const quantity = item.portion_size || '1';
     
     // Note: packaging is only shown in the dedicated Packaging Preference column, not in the description
     return `<tr style="background:${bg}">
-      <td style="padding:8px 16px;border-bottom:1px solid ${borderColor};width:58%">
-        <div style="font-family:'Times New Roman',Times,serif;font-size:16px;font-weight:600;color:${c.primary}">${escapeHtml(item.item_name)}</div>
+      <td style="padding:6px 12px;border-bottom:1px solid ${borderColor};width:58%">
+        <div style="font-family:'Times New Roman',Times,serif;font-size:14px;font-weight:600;color:${c.primary}">${escapeHtml(item.item_name)}</div>
         ${desc}
       </td>
-      <td style="padding:8px 6px;text-align:center;border-bottom:1px solid ${borderColor};width:10%;font-family:'Times New Roman',Times,serif;font-size:12px">${escapeHtml(portionSize)}</td>
-      <td style="padding:8px 6px;text-align:center;border-bottom:1px solid ${borderColor};width:10%;font-family:'Times New Roman',Times,serif;font-size:12px">${escapeHtml(item.portion_size || '1')}</td>
-      <td style="padding:8px 6px;text-align:center;border-bottom:1px solid ${borderColor};width:22%;font-family:'Times New Roman',Times,serif;font-size:12px;font-weight:bold">${escapeHtml(item.packaging || '')}</td>
+      <td style="padding:6px 4px;text-align:center;border-bottom:1px solid ${borderColor};width:10%;font-family:'Times New Roman',Times,serif;font-size:11px">${escapeHtml(portionSize)}</td>
+      <td style="padding:6px 4px;text-align:center;border-bottom:1px solid ${borderColor};width:10%;font-family:'Times New Roman',Times,serif;font-size:11px">${escapeHtml(quantity)}</td>
+      <td style="padding:6px 4px;text-align:center;border-bottom:1px solid ${borderColor};width:22%;font-family:'Times New Roman',Times,serif;font-size:11px;font-weight:bold">${escapeHtml(item.packaging || '')}</td>
     </tr>`;
   }).join('');
 
   // Use URL for logo so frontend can fetch it
   const logoUrl = order._logoUrl || '/assets/logo.png';
-  const logoImg = `<img src="${escapeHtml(logoUrl)}" style="height:200px;margin-bottom:12px" alt="${escapeHtml(s.company.name)}" onerror="this.style.display='none';this.nextElementSibling.style.display='block'"/><div style="display:none;font-size:24px;font-weight:700;color:${c.primary};margin-bottom:12px">${escapeHtml(s.company.name)}</div>`;
+  const logoImg = `<img src="${escapeHtml(logoUrl)}" style="height:100px;margin-bottom:4px" alt="${escapeHtml(s.company.name)}" onerror="this.style.display='none';this.nextElementSibling.style.display='block'"/><div style="display:none;font-size:18px;font-weight:700;color:${c.primary};margin-bottom:4px">${escapeHtml(s.company.name)}</div>`;
 
   // Show status for clients, revision for caterers
-  const badgeDisplay = isForCaterer 
-    ? `<span class="rev">REVISION ${revisionCount}</span>`
-    : `<span class="badge" style="display:inline-block;padding:6px 16px;border-radius:20px;font-size:12px;font-weight:600;background:${statusBg};color:${statusColor}">${escapeHtml(statusLabel)}</span>`;
+  // For caterer_confirmed status with client recipient, show status (not revision)
+  const showStatus = !isForCaterer || (order.status === 'caterer_confirmed' && recipientType === 'client');
+  const badgeDisplay = showStatus
+    ? `<span class="badge" style="display:inline-block;padding:6px 16px;border-radius:20px;font-size:12px;font-weight:600;background:${statusBg};color:${statusColor}">${escapeHtml(statusLabel)}</span>`
+    : `<span class="rev">REVISION ${revisionCount}</span>`;
 
   return `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Order #${displayNum}</title>
-<style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;background:#f1f5f9;padding:20px;color:${c.text}}.inv{max-width:850px;margin:0 auto;background:#fff;box-shadow:0 4px 6px -1px rgba(0,0,0,.1);border-radius:12px;overflow:hidden}.hdr{display:flex;justify-content:space-between;align-items:flex-start;padding:32px 40px;border-bottom:1px solid ${c.borderLight}}.co-info{font-size:12px;color:${c.textLight};line-height:1.5}.inv-num{font-size:24px;font-weight:700;color:${c.primary};margin-bottom:4px}.inv-sub{font-size:14px;color:${c.text};text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;font-weight:600}.rev{font-size:12px;color:${c.textMuted};background:${c.background};padding:4px 12px;border-radius:4px;display:inline-block}.badge{display:inline-block;padding:6px 16px;border-radius:20px;font-size:12px;font-weight:600}.det{display:grid;grid-template-columns:1fr 1fr;gap:40px;padding:32px 40px;background:${c.background}}.det h3{font-size:11px;text-transform:uppercase;letter-spacing:1px;color:${c.textMuted};margin-bottom:16px;font-weight:600}.det-row{display:flex;margin-bottom:10px;font-size:13px}.det-lbl{width:100px;color:${c.textLight}}.det-val{font-weight:500}.bt-name{font-size:16px;font-weight:600;margin-bottom:8px}.bt-co{font-size:13px;color:${c.primary};font-weight:500;margin-bottom:8px}.bt-det{font-size:12px;color:${c.textLight};line-height:1.6}.items{padding:32px 40px}table{width:100%;border-collapse:separate;border-spacing:0;border-radius:8px;overflow:hidden;border:1px solid ${c.border}}thead th{background:${c.primary};color:#fff;padding:10px 16px;font-family:'Times New Roman',Times,serif;font-size:12px;font-weight:bold;text-transform:uppercase;letter-spacing:.5px;text-align:left}thead th:nth-child(2),thead th:nth-child(3),thead th:nth-child(4){text-align:center}.ftr{padding:32px 40px;background:${c.background};border-top:1px solid ${c.borderLight};text-align:center}.ftr-msg{font-size:13px;color:${c.textLight};line-height:1.8;margin-bottom:16px}.warn{padding:0 40px 24px}.warn-box{background:#fef2f2;border:2px solid #ef4444;border-radius:8px;padding:16px 20px}.warn-title{color:#dc2626;font-size:13px;font-weight:700;margin-bottom:8px}.warn-text{color:#991b1b;font-size:12px}.inst{padding:0 40px 24px}.inst-box{background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:16px 20px}.inst-text{color:#166534;font-size:12px;font-style:italic;line-height:1.6}</style></head>
+<style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;background:#f1f5f9;padding:12px;color:${c.text}}.inv{max-width:850px;margin:0 auto;background:#fff;box-shadow:0 4px 6px -1px rgba(0,0,0,.1);border-radius:8px;overflow:hidden}.hdr{display:flex;justify-content:space-between;align-items:flex-start;padding:12px 28px;border-bottom:1px solid ${c.borderLight}}.co-info{font-size:10px;color:${c.textLight};line-height:1.4}.inv-num{font-size:18px;font-weight:700;color:${c.primary};margin-bottom:2px}.inv-sub{font-size:11px;color:${c.text};text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;font-weight:600}.rev{font-size:10px;color:${c.textMuted};background:${c.background};padding:3px 10px;border-radius:4px;display:inline-block}.badge{display:inline-block;padding:4px 12px;border-radius:16px;font-size:11px;font-weight:600}.det{display:grid;grid-template-columns:1fr 1fr;gap:24px;padding:14px 28px;background:${c.background}}.det h3{font-size:10px;text-transform:uppercase;letter-spacing:1px;color:${c.textMuted};margin-bottom:10px;font-weight:600}.det-row{display:flex;margin-bottom:6px;font-size:12px}.det-lbl{width:90px;color:${c.textLight}}.det-val{font-weight:500}.bt-name{font-size:14px;font-weight:600;margin-bottom:4px}.bt-co{font-size:12px;color:${c.primary};font-weight:500;margin-bottom:4px}.bt-det{font-size:11px;color:${c.textLight};line-height:1.5}.items{padding:14px 28px}table{width:100%;border-collapse:separate;border-spacing:0;border-radius:6px;overflow:hidden;border:1px solid ${c.border}}thead th{background:${c.primary};color:#fff;padding:8px 12px;font-family:'Times New Roman',Times,serif;font-size:11px;font-weight:bold;text-transform:uppercase;letter-spacing:.5px;text-align:left}thead th:nth-child(2),thead th:nth-child(3),thead th:nth-child(4){text-align:center}.ftr{padding:12px 28px;background:${c.background};border-top:1px solid ${c.borderLight};text-align:center}.ftr-msg{font-size:11px;color:${c.textLight};line-height:1.6}.warn{padding:0 28px 12px}.warn-box{background:#fef2f2;border:2px solid #ef4444;border-radius:6px;padding:10px 14px}.warn-title{color:#dc2626;font-size:11px;font-weight:700;margin-bottom:6px}.warn-text{color:#991b1b;font-size:11px}.inst{padding:0 28px 12px}.inst-box{background:#f0fdf4;border:1px solid #86efac;border-radius:6px;padding:10px 14px}.inst-text{color:#166534;font-size:11px;font-style:italic;line-height:1.5}</style></head>
 <body><div class="inv">
 <div class="hdr">
   <div>${logoImg}<div class="co-info">${escapeHtml(s.company.address)}<br/><b>Phone | ${escapeHtml(s.company.phone)}</b></div></div>
@@ -623,8 +708,8 @@ export function generateOrderHTMLB(order: any, recipientType: 'client' | 'catere
     ${clientCompany ? `<div class="bt-co">${escapeHtml(clientCompany)}</div>` : ''}
     <div class="bt-det" style="word-wrap:break-word;overflow-wrap:break-word;max-width:250px">
       ${clientAddr ? escapeHtml(clientAddr).replace(/\n/g, '<br/>') + '<br/>' : ''}
-      ${clientEmail ? escapeHtml(clientEmail) + '<br/>' : ''}
-      ${clientPhone ? escapeHtml(clientPhone) : ''}
+      ${clientEmail ? `<div style="margin-top:4px">${escapeHtml(clientEmail)}</div>` : ''}
+      ${clientPhone ? `<div>${escapeHtml(clientPhone)}</div>` : ''}
     </div>
   </div>
   <div>
@@ -691,9 +776,21 @@ export function generateOrderPDFB(order: any, styles: PDFStyleConfig = defaultPD
   const cw = styles.layout.contentWidth;
 
   // Check if this PDF is for a caterer (when status is awaiting_quote or awaiting_caterer, or explicitly set)
-  const isForCaterer = recipientType === 'caterer' || (order.status === 'awaiting_quote' || order.status === 'awaiting_caterer');
+  // Exception: caterer_confirmed status with client recipient should use client info and show status
+  // Explicitly check: if caterer_confirmed with client recipient, use client info (isForCaterer = false)
+  let isForCaterer: boolean;
+  if (order.status === 'caterer_confirmed' && recipientType === 'client') {
+    isForCaterer = false; // Use client info for caterer_confirmed with client recipient
+  } else if (recipientType === 'caterer') {
+    isForCaterer = true; // Explicitly set to caterer
+  } else if (order.status === 'awaiting_quote' || order.status === 'awaiting_caterer') {
+    isForCaterer = true; // Use company info for awaiting_quote/awaiting_caterer
+  } else {
+    isForCaterer = false; // Default to client info for other statuses
+  }
   
   // For caterers (awaiting_quote or awaiting_caterer status), use Kabin247 info instead of client info
+  // For caterer_confirmed with client recipient, use client info
   const clientName = isForCaterer 
     ? 'Kabin247' 
     : decodeHtmlEntitiesForText(order.client?.full_name || order.client_name || '');
@@ -722,108 +819,110 @@ export function generateOrderPDFB(order: any, styles: PDFStyleConfig = defaultPD
 
   let y = m;
 
-  // HEADER - Logo
+  // HEADER - Logo (reduced size)
   const logoPath = getLogoPath();
-  try { if (logoPath) doc.image(logoPath, m, y, { width: 360, height: 144, fit: [360, 144] }); } catch (e) {}
+  try { if (logoPath) doc.image(logoPath, m, y, { width: 180, height: 72, fit: [180, 72] }); } catch (e) {}
 
-  // Order number and type (aligned with logo at top)
-  doc.fillColor(c.primary).fontSize(27).font(styles.fonts.bold).text(`ORDER #${displayNum}`, m, y, { width: cw, align: 'right' });
-  doc.fillColor(c.text).fontSize(17).font(styles.fonts.bold).text(orderTypeTitle, m, y + 33, { width: cw, align: 'right' });
+  // Order number and type (aligned with logo at top, reduced font sizes)
+  doc.fillColor(c.primary).fontSize(18).font(styles.fonts.bold).text(`ORDER #${displayNum}`, m, y, { width: cw, align: 'right' });
+  doc.fillColor(c.text).fontSize(12).font(styles.fonts.bold).text(orderTypeTitle, m, y + 20, { width: cw, align: 'right' });
   
   // Show status for clients, revision for caterers
-  const badgeY = y + 50;
-  if (isForCaterer) {
+  // For caterer_confirmed status with client recipient, show status (not revision)
+  const showStatus = !isForCaterer || (order.status === 'caterer_confirmed' && recipientType === 'client');
+  const badgeY = y + 32;
+  if (showStatus) {
+    // Status badge for clients
+    const badgeW = doc.widthOfString(statusLabel) + 20;
+    const badgeX = pw - m - badgeW;
+    doc.roundedRect(badgeX, badgeY, badgeW, 18, 9).fillColor(statusColor).fill();
+    doc.fillColor(c.white).fontSize(11).font(styles.fonts.bold).text(statusLabel, badgeX, badgeY + 5, { width: badgeW, align: 'center' });
+  } else {
     // Revision badge for caterers
     const revText = `REVISION ${revisionCount}`;
-    const revW = doc.widthOfString(revText) + 16;
-    doc.roundedRect(pw - m - revW, badgeY, revW, 18, 4).fillColor(c.background).fill();
-    doc.fillColor(c.textMuted).fontSize(14).font(styles.fonts.body).text(revText, pw - m - revW, badgeY + 2, { width: revW, align: 'center' });
-  } else {
-    // Status badge for clients
-    const badgeW = doc.widthOfString(statusLabel) + 24;
-    const badgeX = pw - m - badgeW;
-    doc.roundedRect(badgeX, badgeY, badgeW, 22, 11).fillColor(statusColor).fill();
-    doc.fillColor(c.white).fontSize(14).font(styles.fonts.bold).text(statusLabel, badgeX, badgeY + 6, { width: badgeW, align: 'center' });
+    const revW = doc.widthOfString(revText) + 12;
+    doc.roundedRect(pw - m - revW, badgeY, revW, 16, 3).fillColor(c.background).fill();
+    doc.fillColor(c.textMuted).fontSize(10).font(styles.fonts.body).text(revText, pw - m - revW, badgeY + 2, { width: revW, align: 'center' });
   }
 
-  // Company info
-  doc.fillColor(c.textLight).fontSize(12).font(styles.fonts.body).text(styles.company.address, m, y + 155).text(`Phone | ${styles.company.phone}`, m, y + 170);
+  // Company info (reduced font size and spacing)
+  doc.fillColor(c.textLight).fontSize(10).font(styles.fonts.body).text(styles.company.address, m, y + 80).text(`Phone | ${styles.company.phone}`, m, y + 92);
 
-  y += 190;
+  y += 110;
   doc.moveTo(m, y).lineTo(pw - m, y).strokeColor(c.borderLight).lineWidth(1).stroke();
-  y += 15;
+  y += 10;
 
-  // DETAILS SECTION
-  const dh = 100;
+  // DETAILS SECTION (reduced height and spacing)
+  const dh = 75;
   doc.rect(m, y, cw, dh).fillColor(c.background).fill();
 
-  const lx = m + 15, rx = pw / 2 + 10;
-  let dy = y + 12;
+  const lx = m + 12, rx = pw / 2 + 8;
+  let dy = y + 8;
 
   // Bill To
-  doc.fillColor(c.textMuted).fontSize(12).font(styles.fonts.bold).text('BILL TO', lx, dy);
-  let by = dy + 21;
-  doc.fillColor(c.text).fontSize(17).font(styles.fonts.bold).text(clientName, lx, by);
-  by += 21;
+  doc.fillColor(c.textMuted).fontSize(10).font(styles.fonts.bold).text('BILL TO', lx, dy);
+  let by = dy + 15;
+  doc.fillColor(c.text).fontSize(14).font(styles.fonts.bold).text(clientName, lx, by);
+  by += 16;
   if (clientCompany) {
-    doc.fillColor(c.primary).fontSize(15).font(styles.fonts.bold).text(clientCompany, lx, by);
-    by += 18;
+    doc.fillColor(c.primary).fontSize(12).font(styles.fonts.bold).text(clientCompany, lx, by);
+    by += 14;
   }
-  doc.fillColor(c.textLight).fontSize(12).font(styles.fonts.body);
+  doc.fillColor(c.textLight).fontSize(10).font(styles.fonts.body);
   if (clientAddr) { 
     const startY = by;
     doc.text(clientAddr, lx, by, { width: 180, lineBreak: true });
     const endY = doc.y;
-    by = endY + 10; // Add proper spacing after wrapped address text
+    by = endY + 6; // Reduced spacing after wrapped address text
   }
-  if (clientEmail) { doc.text(clientEmail, lx, by); by += 18; }
+  if (clientEmail) { doc.text(clientEmail, lx, by); by += 14; }
   if (clientPhone) { doc.text(clientPhone, lx, by); }
 
   // Delivery Details
-  doc.fillColor(c.textMuted).fontSize(12).font(styles.fonts.bold).text('DELIVERY DETAILS', rx, dy);
-  let ry = dy + 21;
+  doc.fillColor(c.textMuted).fontSize(10).font(styles.fonts.bold).text('DELIVERY DETAILS', rx, dy);
+  let ry = dy + 15;
   const row = (l: string, v: string, yy: number) => {
-    doc.fillColor(c.textLight).fontSize(12).font(styles.fonts.body).text(l, rx, yy);
+    doc.fillColor(c.textLight).fontSize(10).font(styles.fonts.body).text(l, rx, yy);
     doc.fillColor(c.text).font(styles.fonts.bold).text(v, rx + 70, yy);
-    return yy + 18;
+    return yy + 14;
   };
   ry = row('Date & Time:', `${formatDate(order.delivery_date)}   ${formatTime(order.delivery_time)}`, ry);
   ry = row('Airport Code:', airportCode, ry);
   ry = row('FBO:', fboName, ry);
   row('Tail#:', order.aircraft_tail_number || '', ry);
 
-  y += dh + 10;
+  y += dh + 8;
 
-  // RESTRICTIONS & ALLERGIES
-  const warnH = 53;
-  doc.roundedRect(m, y, cw, warnH, 4).fillColor('#fef2f2').fill();
-  doc.roundedRect(m, y, cw, warnH, 4).strokeColor('#ef4444').lineWidth(1.5).stroke();
-  doc.fillColor('#dc2626').fontSize(14).font(styles.fonts.bold).text('!!! RESTRICTIONS & ALLERGIES !!!', m + 15, y + 12);
-  doc.fillColor('#991b1b').fontSize(12).font(styles.fonts.body).text(dietary ? `** ${dietary} **` : '** N/A **', m + 15, y + 30);
-  y += warnH + 15;
+  // RESTRICTIONS & ALLERGIES (reduced height and spacing)
+  const warnH = 38;
+  doc.roundedRect(m, y, cw, warnH, 3).fillColor('#fef2f2').fill();
+  doc.roundedRect(m, y, cw, warnH, 3).strokeColor('#ef4444').lineWidth(1.5).stroke();
+  doc.fillColor('#dc2626').fontSize(11).font(styles.fonts.bold).text('!!! RESTRICTIONS & ALLERGIES !!!', m + 12, y + 8);
+  doc.fillColor('#991b1b').fontSize(10).font(styles.fonts.body).text(dietary ? `** ${dietary} **` : '** N/A **', m + 12, y + 22);
+  y += warnH + 10;
 
-  // PACKAGING INSTRUCTIONS (if any)
+  // PACKAGING INSTRUCTIONS (if any, reduced height and spacing)
   if (packagingInst) {
-    const instH = 55; // Increased height for better spacing
-    doc.roundedRect(m, y, cw, instH, 4).fillColor('#f0fdf4').fill();
-    doc.roundedRect(m, y, cw, instH, 4).strokeColor('#86efac').lineWidth(1).stroke();
-    doc.fillColor('#166534').fontSize(12).font(styles.fonts.body).text(`" ${packagingInst} "`, m + 15, y + 18, { width: cw - 30, lineBreak: true });
-    y += instH + 18; // Increased spacing after section
+    const instH = 40;
+    doc.roundedRect(m, y, cw, instH, 3).fillColor('#f0fdf4').fill();
+    doc.roundedRect(m, y, cw, instH, 3).strokeColor('#86efac').lineWidth(1).stroke();
+    doc.fillColor('#166534').fontSize(10).font(styles.fonts.body).text(`" ${packagingInst} "`, m + 12, y + 12, { width: cw - 24, lineBreak: true });
+    y += instH + 10;
   }
 
   // TABLE - Items grouped by category
   const tw = cw;
   const cols = { item: tw * 0.50, portion: tw * 0.12, qty: tw * 0.12, packaging: tw * 0.26 };
 
-  // Table header
+  // Table header (reduced height)
   const drawTableHeader = (yPos: number) => {
-    doc.roundedRect(m, yPos, tw, 39, 3).fillColor(c.primary).fill();
-    doc.fillColor(c.white).fontSize(12).font(styles.fonts.bold);
-    doc.text('Item & Description', m + 10, yPos + 14);
-    doc.text('Portion / Size', m + cols.item, yPos + 14, { width: cols.portion, align: 'center' });
-    doc.text('Portions/Servings/Qty', m + cols.item + cols.portion, yPos + 14, { width: cols.qty, align: 'center' });
-    doc.text('Packaging Preference', m + cols.item + cols.portion + cols.qty, yPos + 14, { width: cols.packaging, align: 'center' });
-    return yPos + 39;
+    doc.roundedRect(m, yPos, tw, 28, 2).fillColor(c.primary).fill();
+    doc.fillColor(c.white).fontSize(10).font(styles.fonts.bold);
+    doc.text('Item & Description', m + 8, yPos + 10);
+    doc.text('Portion / Size', m + cols.item, yPos + 10, { width: cols.portion, align: 'center' });
+    doc.text('Portions/Servings/Qty', m + cols.item + cols.portion, yPos + 10, { width: cols.qty, align: 'center' });
+    doc.text('Packaging Preference', m + cols.item + cols.portion + cols.qty, yPos + 10, { width: cols.packaging, align: 'center' });
+    return yPos + 28;
   };
 
   y = drawTableHeader(y);
@@ -840,15 +939,15 @@ export function generateOrderPDFB(order: any, styles: PDFStyleConfig = defaultPD
       y = drawTableHeader(y);
     }
 
-    // Category header (grey background)
-    doc.rect(m, y, tw, 33).fillColor('#9ca3af').fill();
-    doc.fillColor(c.white).fontSize(14).font(styles.fonts.bold).text(category.toUpperCase(), m + 10, y + 11);
-    y += 33;
+    // Category header (grey background, reduced height)
+    doc.rect(m, y, tw, 24).fillColor('#9ca3af').fill();
+    doc.fillColor(c.white).fontSize(11).font(styles.fonts.bold).text(category.toUpperCase(), m + 8, y + 8);
+    y += 24;
 
-    // Items in category
+    // Items in category (reduced row heights)
     items.forEach((item: any) => {
       const hasDesc = item.item_description?.trim();
-      const rh = hasDesc ? 54 : 36;
+      const rh = hasDesc ? 40 : 28;
 
       // Check if we need a new page
       if (y + rh > ph - 80) {
@@ -860,14 +959,18 @@ export function generateOrderPDFB(order: any, styles: PDFStyleConfig = defaultPD
       doc.rect(m, y, tw, rh).fillColor(rowIdx % 2 === 0 ? c.white : c.backgroundAlt).fill();
       doc.moveTo(m, y + rh).lineTo(m + tw, y + rh).strokeColor(c.borderLight).lineWidth(0.5).stroke();
 
-      const ty = y + (hasDesc ? 9 : 12);
-      doc.fillColor(c.primary).fontSize(15).font(styles.fonts.bold).text(decodeHtmlEntitiesForText(item.item_name || ''), m + 10, ty, { width: cols.item - 15 });
+      const ty = y + (hasDesc ? 7 : 9);
+      doc.fillColor(c.primary).fontSize(13).font(styles.fonts.bold).text(decodeHtmlEntitiesForText(item.item_name || ''), m + 8, ty, { width: cols.item - 12 });
       if (hasDesc) {
-        doc.fillColor(c.textLight).fontSize(11).font(styles.fonts.body).text(decodeHtmlEntitiesForText(item.item_description), m + 10, ty + 18, { width: cols.item - 15 });
+        doc.fillColor(c.textLight).fontSize(10).font(styles.fonts.body).text(decodeHtmlEntitiesForText(item.item_description), m + 8, ty + 14, { width: cols.item - 12 });
       }
-      doc.fillColor(c.text).fontSize(14).font(styles.fonts.body);
-      doc.text(item.portion_size || '', m + cols.item, ty, { width: cols.portion, align: 'center' });
-      doc.text(item.portion_size || '1', m + cols.item + cols.portion, ty, { width: cols.qty, align: 'center' });
+      doc.fillColor(c.text).fontSize(11).font(styles.fonts.body);
+      // portion_serving is the size (can be "200ml", "500mg", etc.), portion_size is the quantity (purely number)
+      // If portion_serving is "No#" or empty, fall back to portion_size
+      const portionSize = (item.portion_serving && item.portion_serving !== 'No#') ? item.portion_serving : (item.portion_size || '');
+      const quantity = item.portion_size || '1';
+      doc.text(portionSize, m + cols.item, ty, { width: cols.portion, align: 'center' });
+      doc.text(quantity, m + cols.item + cols.portion, ty, { width: cols.qty, align: 'center' });
       doc.text(item.packaging || '', m + cols.item + cols.portion + cols.qty, ty, { width: cols.packaging, align: 'center' });
 
       y += rh;
@@ -877,10 +980,10 @@ export function generateOrderPDFB(order: any, styles: PDFStyleConfig = defaultPD
 
   // Table bottom border
   doc.roundedRect(m, y - 1, tw, 2, 1).fillColor(c.border).fill();
-  y += 20;
+  y += 12;
 
-  // FOOTER - Only add if we have content that needs it
-  const footerHeight = 40;
+  // FOOTER - Only add if we have content that needs it (reduced height)
+  const footerHeight = 30;
   if (y + footerHeight > ph - 30) {
     doc.addPage();
     y = m;
@@ -888,8 +991,8 @@ export function generateOrderPDFB(order: any, styles: PDFStyleConfig = defaultPD
   
   const fy = Math.max(y, ph - footerHeight - 10);
   doc.moveTo(m, fy).lineTo(pw - m, fy).strokeColor(c.borderLight).lineWidth(1).stroke();
-  doc.fillColor(c.textLight).fontSize(12).font(styles.fonts.body)
-    .text('Email: Inflight@Kabin247.com   Phone: +1-813-331-5667  Address: 4520 W. Oakellar Ave, Unit 13061, Tampa, FL 33611', m, fy + 18, { width: cw, align: 'center' });
+  doc.fillColor(c.textLight).fontSize(10).font(styles.fonts.body)
+    .text('Email: Inflight@Kabin247.com   Phone: +1-813-331-5667  Address: 4520 W. Oakellar Ave, Unit 13061, Tampa, FL 33611', m, fy + 12, { width: cw, align: 'center' });
 
   // Add page numbers only to pages that have content
   const pages = doc.bufferedPageRange();

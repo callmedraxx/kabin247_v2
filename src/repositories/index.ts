@@ -37,6 +37,8 @@ import { RefreshTokenRepository } from './refresh-token.repository';
 import { PostgreSQLRefreshTokenRepository } from './postgresql-refresh-token.repository';
 import { PasswordResetRepository } from './password-reset.repository';
 import { PostgreSQLPasswordResetRepository } from './postgresql-password-reset.repository';
+import { PaymentRepository } from './payment.repository';
+import { PostgreSQLPaymentRepository } from './postgresql-payment.repository';
 
 let airportRepository: AirportRepository | null = null;
 let catererRepository: CatererRepository | null = null;
@@ -193,6 +195,7 @@ let userRepository: UserRepository | null = null;
 let inviteRepository: InviteRepository | null = null;
 let refreshTokenRepository: RefreshTokenRepository | null = null;
 let passwordResetRepository: PasswordResetRepository | null = null;
+let paymentRepository: PaymentRepository | null = null;
 
 export function getUserRepository(): UserRepository {
   if (!userRepository) {
@@ -248,5 +251,19 @@ export function getPasswordResetRepository(): PasswordResetRepository {
     }
   }
   return passwordResetRepository;
+}
+
+export function getPaymentRepository(): PaymentRepository {
+  if (!paymentRepository) {
+    const dbType = process.env.DB_TYPE || 'memory';
+    const nodeEnv = process.env.NODE_ENV || 'development';
+
+    if (dbType === 'memory' || (nodeEnv === 'development' && dbType !== 'postgres')) {
+      throw new Error('Payment repository requires PostgreSQL');
+    } else {
+      paymentRepository = new PostgreSQLPaymentRepository(getDatabase());
+    }
+  }
+  return paymentRepository;
 }
 

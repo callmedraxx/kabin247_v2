@@ -9,7 +9,8 @@ export interface OrderItem {
   menu_item_id?: number;
   item_name: string;
   item_description?: string;
-  portion_size: string;
+  portion_size: string; // Quantity (purely number)
+  portion_serving?: string; // Size (can be number or mixture like "200ml", "500mg")
   price: number;
   category?: string;
   packaging?: string;
@@ -116,6 +117,7 @@ export interface CreateOrderDTO {
     item_name: string;
     item_description?: string;
     portion_size: string;
+    portion_serving?: string;
     price: number;
     category?: string;
     packaging?: string;
@@ -150,6 +152,7 @@ export interface CreateOrderFromRefsDTO {
     item_id: number;
     item_description?: string | null;
     portion_size: string;
+    portion_serving?: string | null;
     price: number;
     category?: string | null;
     packaging?: string | null;
@@ -191,6 +194,7 @@ export interface UpdateOrderDTO {
     item_name: string;
     item_description?: string;
     portion_size: string;
+    portion_serving?: string;
     price: number;
     category?: string;
     packaging?: string;

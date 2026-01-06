@@ -45,72 +45,125 @@ export function getPDFFormat(recipient: EmailRecipient, purpose: EmailPurpose): 
 }
 
 /**
+ * Format delivery date for email subject (MM/DD/YYYY)
+ */
+function formatDateForSubject(dateStr: string | null | undefined): string {
+  if (!dateStr) return '';
+  
+  // If it's in YYYY-MM-DD format, parse it directly to avoid timezone issues
+  const match = String(dateStr).match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (match) {
+    const [, year, month, day] = match;
+    return `${month}/${day}/${year}`;
+  }
+  
+  return '';
+}
+
+/**
+ * Format delivery time for email subject (HH:mm)
+ */
+function formatTimeForSubject(timeStr: string | null | undefined): string {
+  if (!timeStr) return '';
+  // Remove trailing 'L' if present (aviation format)
+  return timeStr.replace(/L$/, '');
+}
+
+/**
+ * Build delivery info part for subject line
+ */
+function buildDeliveryInfoPart(airportCode?: string, deliveryDate?: string, deliveryTime?: string): string {
+  const parts: string[] = [];
+  
+  if (airportCode) {
+    parts.push(airportCode);
+  }
+  
+  const formattedDate = formatDateForSubject(deliveryDate);
+  const formattedTime = formatTimeForSubject(deliveryTime);
+  
+  if (formattedDate && formattedTime) {
+    parts.push(`${formattedDate} ${formattedTime}`);
+  } else if (formattedDate) {
+    parts.push(formattedDate);
+  } else if (formattedTime) {
+    parts.push(formattedTime);
+  }
+  
+  return parts.length > 0 ? ` / ${parts.join(' / ')}` : '';
+}
+
+/**
  * Get email subject based on recipient and purpose
  */
-export function getEmailSubject(orderNumber: string, recipient: EmailRecipient, purpose: EmailPurpose, airportCode?: string, status?: string): string {
+export function getEmailSubject(
+  orderNumber: string, 
+  recipient: EmailRecipient, 
+  purpose: EmailPurpose, 
+  airportCode?: string, 
+  status?: string,
+  deliveryDate?: string,
+  deliveryTime?: string
+): string {
   const displayNum = orderNumber;
+  const deliveryPart = buildDeliveryInfoPart(airportCode, deliveryDate, deliveryTime);
   
   if (recipient === 'caterer') {
     // Special handling for awaiting_caterer status
     if (status === 'awaiting_caterer') {
-      const airportPart = airportCode ? ` / ${airportCode}` : '';
-      return `Kabin247 Order#${displayNum}${airportPart} / Confirmation Request`;
+      return `Kabin247 Order#${displayNum}${deliveryPart} / Confirmation Request`;
     }
     
     switch (purpose) {
       case 'quote_request':
-        const airportPart = airportCode ? ` / ${airportCode}` : '';
-        return `Kabin247 Order#${displayNum}${airportPart} / Quote Request- This Order Is Not Live!`;
+        return `Kabin247 Order#${displayNum}${deliveryPart} / Quote Request- This Order Is Not Live!`;
       case 'order_request':
       case 'confirmation':
-        return `Kabin247 Order Request#${displayNum}`;
+        return `Kabin247 Order Request#${displayNum}${deliveryPart}`;
       case 'cancellation':
-        return `Kabin247 Cancellation#${displayNum}`;
+        return `Kabin247 Cancellation#${displayNum}${deliveryPart}`;
       case 'update':
       default:
-        return `Kabin247 Order Update#${displayNum}`;
+        return `Kabin247 Order Update#${displayNum}${deliveryPart}`;
     }
   }
   
   // Client emails
   // Special handling for awaiting_client_approval status
   if (status === 'awaiting_client_approval') {
-    const airportPart = airportCode ? ` / ${airportCode}` : '';
-    return `Kabin247 Order#${displayNum}${airportPart} / Order Estimate - This Order Is Not Live`;
+    return `Kabin247 Order#${displayNum}${deliveryPart} / Order Estimate - This Order Is Not Live`;
   }
   
   // Special handling for caterer_confirmed status
   if (status === 'caterer_confirmed') {
-    const airportPart = airportCode ? ` / ${airportCode}` : '';
-    return `Kabin247 Order#${displayNum}${airportPart} / Order Confirmed`;
+    return `Kabin247 Order#${displayNum}${deliveryPart} / Order Confirmed`;
   }
   
   // Special handling for delivered status
   if (status === 'delivered') {
-    const airportPart = airportCode ? ` / ${airportCode}` : '';
-    return `Kabin247 Order#${displayNum}${airportPart} / Delivery Completed`;
+    return `Kabin247 Order#${displayNum}${deliveryPart} / Delivery Completed`;
   }
   
   // Special handling for paid status
   if (status === 'paid') {
-    return `Kabin247 Ord#${displayNum} Final Invoice`;
+    return `Kabin247 Ord#${displayNum}${deliveryPart} Final Invoice`;
   }
   
   switch (purpose) {
     case 'quote':
-      return `Kabin247 Quote#${displayNum}`;
+      return `Kabin247 Quote#${displayNum}${deliveryPart}`;
     case 'confirmation':
-      return `Kabin247 Conf#${displayNum}`;
+      return `Kabin247 Conf#${displayNum}${deliveryPart}`;
     case 'delivery':
-      return `Kabin247 Delivery Update#${displayNum}`;
+      return `Kabin247 Delivery Update#${displayNum}${deliveryPart}`;
     case 'invoice':
-      return `Kabin247 Invoice#${displayNum}`;
+      return `Kabin247 Invoice#${displayNum}${deliveryPart}`;
     case 'update':
-      return `Kabin247 Order Update#${displayNum}`;
+      return `Kabin247 Order Update#${displayNum}${deliveryPart}`;
     case 'cancellation':
-      return `Kabin247 Cancellation#${displayNum}`;
+      return `Kabin247 Cancellation#${displayNum}${deliveryPart}`;
     default:
-      return `Kabin247 Order#${displayNum}`;
+      return `Kabin247 Order#${displayNum}${deliveryPart}`;
   }
 }
 
@@ -225,7 +278,7 @@ One point of contact for your global inflight needs.
     },
     delivered: {
       purpose: 'delivery' as EmailPurpose,
-      pdfFormat: 'B' as PDFFormat,
+      pdfFormat: 'B' as PDFFormat, // PDF B (no pricing, client info) for delivered orders
       body: (clientFirstName: string) => `
 Dear ${clientFirstName},
 
@@ -544,7 +597,7 @@ export class EmailService {
     }
 
     try {
-      const fromEmail = process.env.SMTP_EMAIL || 'noreply@kabin247.com';
+      const fromEmail = process.env.SMTP_EMAIL || 'inflight@kabin247.com';
       const toAddresses = Array.isArray(options.to) ? options.to.join(', ') : options.to;
       const ccAddresses = options.cc 
         ? (Array.isArray(options.cc) ? options.cc.join(', ') : options.cc)
@@ -552,6 +605,7 @@ export class EmailService {
 
       const mailOptions: nodemailer.SendMailOptions = {
         from: `"Kabin247 Inflight Support" <${fromEmail}>`,
+        replyTo: 'inflight@kabin247.com',
         to: toAddresses,
         cc: ccAddresses,
         subject: options.subject,
@@ -597,8 +651,16 @@ export class EmailService {
   /**
    * Get the email subject based on order number, recipient type and purpose
    */
-  getSubject(orderNumber: string, recipientType: 'client' | 'caterer', purpose: EmailPurpose, airportCode?: string, status?: string): string {
-    return getEmailSubject(orderNumber, recipientType, purpose, airportCode, status);
+  getSubject(
+    orderNumber: string, 
+    recipientType: 'client' | 'caterer', 
+    purpose: EmailPurpose, 
+    airportCode?: string, 
+    status?: string,
+    deliveryDate?: string,
+    deliveryTime?: string
+  ): string {
+    return getEmailSubject(orderNumber, recipientType, purpose, airportCode, status, deliveryDate, deliveryTime);
   }
 
   /**

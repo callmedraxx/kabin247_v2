@@ -1,0 +1,14 @@
+https://developer.squareup.com/docs/web-payments/overview
+https://developer.squareup.com/docs/web-payments/quickstart
+https://developer.squareup.com/docs/web-payments/quickstart/set-up-web-client-app
+https://developer.squareup.com/docs/web-payments/quickstart/add-sdk-to-web-client
+https://developer.squareup.com/docs/web-payments/quickstart/deploy-app
+https://developer.squareup.com/docs/web-payments/take-card-payment
+https://developer.squareup.com/docs/web-payments/add-ach
+https://developer.squareup.com/docs/web-payments/add-afterpay
+https://developer.squareup.com/docs/web-payments/add-cash-app-pay
+https://developer.squareup.com/docs/web-payments/customize-styles
+https://developer.squareup.com/docs/web-payments/charge-and-store-cards
+https://developer.squareup.com/docs/web-payments/content-security-policy
+https://developer.squareup.com/docs/web-payments/exception-handling
+https://developer.squareup.com/docs

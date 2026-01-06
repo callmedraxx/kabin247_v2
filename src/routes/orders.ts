@@ -683,9 +683,11 @@ orderRouter.patch('/:id/status', requirePermission('orders.update_status'), asyn
     const id = parseInt(req.params.id);
     const statusData: OrderStatusUpdateDTO = req.body;
     
-    // Only ADMIN can set status to 'paid'
-    if (statusData.status === 'paid' && req.user!.role !== 'ADMIN') {
-      return res.status(403).json({ error: 'Only administrators can set order status to paid' });
+    // Prevent manual status update to 'paid' - this can only be set automatically via payment processing
+    if (statusData.status === 'paid') {
+      return res.status(403).json({ 
+        error: 'Order status cannot be manually set to "paid". Payment must be processed through the payment system.' 
+      });
     }
     
     const order = await orderService.updateOrderStatus(id, statusData);
@@ -831,7 +833,38 @@ orderRouter.get('/:id/preview', requirePermission('orders.read'), async (req: Re
     
     // Pass logo URL to HTML generator
     const orderWithLogo = { ...order, _logoUrl: logoUrl };
-    const html = generateOrderHTML(orderWithLogo);
+    
+    // Route to PDF A or PDF B based on order status
+    // PDF A (with pricing): awaiting_client_approval, paid, delivered
+    // PDF B (no pricing): awaiting_quote, awaiting_caterer, caterer_confirmed, in_preparation, ready_for_delivery, cancelled, order_changed
+    // Special handling:
+    //   - caterer_confirmed: PDF B with client info and status "caterer confirmed" (not revision)
+    //   - delivered: PDF A with pricing and client info
+    let html: string;
+    const pdfAStatuses = ['awaiting_client_approval', 'paid', 'delivered'];
+    const usePdfA = pdfAStatuses.includes(order.status);
+    
+    // Log for debugging
+    Logger.info('PDF Preview routing', {
+      orderId: id,
+      orderNumber: order.order_number,
+      status: order.status,
+      usePdfA,
+      clientId: order.client_id,
+      hasClient: !!order.client,
+    });
+    
+    if (order.status === 'caterer_confirmed') {
+      // PDF B with client info and status (not revision)
+      html = generateOrderHTMLB(orderWithLogo, 'client');
+    } else if (usePdfA) {
+      // PDF A with pricing
+      html = generateOrderHTML(orderWithLogo);
+    } else {
+      // PDF B (default for other statuses)
+      html = generateOrderHTMLB(orderWithLogo);
+    }
+    
     res.json({ html, order_number: order.order_number, order, logoUrl });
   } catch (error: any) {
     Logger.error('Failed to generate order preview', error, {
@@ -870,7 +903,42 @@ orderRouter.get('/:id/pdf', requirePermission('orders.read'), async (req: Reques
   try {
     const id = parseInt(req.params.id);
     const regenerate = req.query.regenerate === 'true';
-    const pdf = await orderService.getOrCreateOrderPdf(id, regenerate);
+    const order = await orderService.getOrderById(id);
+    if (!order) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+    
+    // Route to PDF A or PDF B based on order status
+    // PDF A (with pricing): awaiting_client_approval, paid, delivered
+    // PDF B (no pricing): awaiting_quote, awaiting_caterer, caterer_confirmed, in_preparation, ready_for_delivery, cancelled, order_changed
+    // Special handling:
+    //   - caterer_confirmed: PDF B with client info and status "caterer confirmed" (not revision)
+    //   - delivered: PDF A with pricing and client info
+    let pdf: { buffer: Buffer; filename: string; mimeType: string; order: any };
+    const pdfAStatuses = ['awaiting_client_approval', 'paid', 'delivered'];
+    const usePdfA = pdfAStatuses.includes(order.status);
+    
+    // Log for debugging
+    Logger.info('PDF Download routing', {
+      orderId: id,
+      orderNumber: order.order_number,
+      status: order.status,
+      usePdfA,
+      regenerate,
+      clientId: order.client_id,
+      hasClient: !!order.client,
+    });
+    
+    if (order.status === 'caterer_confirmed') {
+      // PDF B with client info and status (not revision)
+      pdf = await orderService.getOrCreateOrderPdfB(id, 'client');
+    } else if (usePdfA) {
+      // PDF A with pricing
+      pdf = await orderService.getOrCreateOrderPdf(id, regenerate);
+    } else {
+      // PDF B (default for other statuses)
+      pdf = await orderService.getOrCreateOrderPdfB(id);
+    }
     
     const download = req.query.download !== 'false';
     const filename = pdf.filename;
@@ -925,8 +993,10 @@ orderRouter.get('/:id/preview-b', requirePermission('orders.read'), async (req: 
     const logoUrl = `${protocol}://${host}/assets/logo.png`;
     
     // Pass logo URL to HTML generator
+    // For caterer_confirmed status, use 'client' recipient type to show client info and status
+    const recipientType = order.status === 'caterer_confirmed' ? 'client' : 'caterer';
     const orderWithLogo = { ...order, _logoUrl: logoUrl };
-    const html = generateOrderHTMLB(orderWithLogo);
+    const html = generateOrderHTMLB(orderWithLogo, recipientType);
     res.json({ html, order_number: order.order_number, order, logoUrl });
   } catch (error: any) {
     Logger.error('Failed to generate order preview B', error, {
@@ -965,7 +1035,14 @@ orderRouter.get('/:id/preview-b', requirePermission('orders.read'), async (req: 
 orderRouter.get('/:id/pdf-b', requirePermission('orders.read'), async (req: Request, res: Response) => {
   try {
     const id = parseInt(req.params.id);
-    const pdf = await orderService.getOrCreateOrderPdfB(id);
+    const order = await orderService.getOrderById(id);
+    if (!order) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+    
+    // For caterer_confirmed status, use 'client' recipient type to show client info and status
+    const recipientType = order.status === 'caterer_confirmed' ? 'client' : 'caterer';
+    const pdf = await orderService.getOrCreateOrderPdfB(id, recipientType);
     
     const download = req.query.download !== 'false';
     const filename = pdf.filename;
@@ -1070,19 +1147,28 @@ orderRouter.post('/:id/send-to-client', requirePermission('orders.read'), async 
       (order.airport && order.airport.length <= 10 ? order.airport : '') || 
       '';
     
-    // Get subject using the new format (pass status for special handling)
-    const subject = req.body.custom_subject || emailService.getSubject(order.order_number || '', 'client', purpose, airportCode, order.status);
+    // Get subject using the new format (pass status, delivery date, and delivery time for special handling)
+    const subject = req.body.custom_subject || emailService.getSubject(
+      order.order_number || '', 
+      'client', 
+      purpose, 
+      airportCode, 
+      order.status,
+      order.delivery_date,
+      order.delivery_time
+    );
     const body = req.body.custom_message || template.body(clientFirstName);
 
     // Generate HTML email
     const html = emailService.generateEmailHTML(body, order.order_number || '');
 
-    // For delivered status, don't attach PDF
-    const attachments = [];
-    if (order.status !== 'delivered') {
       // Get PDF attachment based on format (A = with pricing, B = without pricing)
+    // For delivered status, ALWAYS use PDF B (no pricing) with client info in Bill To section
       // For clients, always pass 'client' as recipient type to show status instead of revision
-      const pdfResult = pdfFormat === 'B' 
+    const attachments = [];
+    // Delivered orders always get PDF B with client info (no pricing)
+    const usePdfB = order.status === 'delivered' || pdfFormat === 'B';
+    const pdfResult = usePdfB
         ? await orderService.getOrCreateOrderPdfB(id, 'client')
         : await orderService.getOrCreateOrderPdf(id);
       
@@ -1091,7 +1177,6 @@ orderRouter.post('/:id/send-to-client', requirePermission('orders.read'), async 
         content: pdfResult.buffer,
         contentType: 'application/pdf',
       });
-    }
 
     // Get CC emails from request body
     const ccEmails = req.body.cc_emails && Array.isArray(req.body.cc_emails) 
@@ -1214,8 +1299,16 @@ orderRouter.post('/:id/send-to-caterer', requirePermission('orders.read'), async
       (order.airport && order.airport.length <= 10 ? order.airport : '') || 
       '';
     
-    // Get subject using the new format (pass status for special handling)
-    const subject = req.body.custom_subject || emailService.getSubject(order.order_number || '', 'caterer', purpose, airportCode, order.status);
+    // Get subject using the new format (pass status, delivery date, and delivery time for special handling)
+    const subject = req.body.custom_subject || emailService.getSubject(
+      order.order_number || '', 
+      'caterer', 
+      purpose, 
+      airportCode, 
+      order.status,
+      order.delivery_date,
+      order.delivery_time
+    );
     const body = req.body.custom_message || template.body('Team');
 
     // Generate HTML email
@@ -1379,12 +1472,29 @@ orderRouter.post('/:id/send-to-both', requirePermission('orders.read'), async (r
       }
       
       const clientPdfFormat = clientTemplate.pdfFormat;
-      const clientSubject = req.body.custom_client_subject || emailService.getSubject(order.order_number || '', 'client', clientPurpose);
+      
+      // Get airport code for subject line
+      const airportCode = order.airport_details?.airport_code_iata || 
+        order.airport_details?.airport_code_icao || 
+        (order.airport && order.airport.length <= 10 ? order.airport : '') || 
+        '';
+      
+      const clientSubject = req.body.custom_client_subject || emailService.getSubject(
+        order.order_number || '', 
+        'client', 
+        clientPurpose,
+        airportCode,
+        order.status,
+        order.delivery_date,
+        order.delivery_time
+      );
       const clientBody = req.body.custom_client_message || clientTemplate.body(clientFirstName);
       const clientHtml = emailService.generateEmailHTML(clientBody, order.order_number || '');
       
       // Use appropriate PDF format for client (with status, not revision)
-      const clientPdf = clientPdfFormat === 'B' ? pdfBForClient : pdfA;
+      // Delivered orders always use PDF B (no pricing) with client info
+      const usePdfBForClient = order.status === 'delivered' || clientPdfFormat === 'B';
+      const clientPdf = usePdfBForClient ? pdfBForClient : pdfA;
 
       // Get CC emails from request body
       const ccEmails = req.body.cc_emails && Array.isArray(req.body.cc_emails) 
@@ -1417,7 +1527,22 @@ orderRouter.post('/:id/send-to-both', requirePermission('orders.read'), async (r
     if (catererEmail) {
       const catererTemplate = emailService.getTemplate('caterer', order.status || 'default');
       const catererPurpose = req.body.caterer_purpose || catererTemplate.purpose;
-      const catererSubject = req.body.custom_caterer_subject || emailService.getSubject(order.order_number || '', 'caterer', catererPurpose);
+      
+      // Get airport code for subject line
+      const catererAirportCode = order.airport_details?.airport_code_iata || 
+        order.airport_details?.airport_code_icao || 
+        (order.airport && order.airport.length <= 10 ? order.airport : '') || 
+        '';
+      
+      const catererSubject = req.body.custom_caterer_subject || emailService.getSubject(
+        order.order_number || '', 
+        'caterer', 
+        catererPurpose,
+        catererAirportCode,
+        order.status,
+        order.delivery_date,
+        order.delivery_time
+      );
       const catererBody = req.body.custom_caterer_message || catererTemplate.body('Team');
       const catererHtml = emailService.generateEmailHTML(catererBody, order.order_number || '');
 

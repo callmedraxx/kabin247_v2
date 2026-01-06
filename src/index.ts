@@ -77,6 +77,7 @@ async function startServer() {
     const { inventoryRouter } = await import('./routes/inventory');
     const { taxChargeRouter } = await import('./routes/tax-charges');
     const { fboRouter } = await import('./routes/fbos');
+    const { paymentRouter, publicPaymentRouter } = await import('./routes/payments');
 
     // Swagger Documentation
     const swaggerSpec = setupSwagger();
@@ -91,6 +92,29 @@ async function startServer() {
     app.use('/auth', authRouter);
     app.use('/invites', invitesRouter);
     
+    // Public Square Application ID endpoint (no auth required - safe to expose)
+    app.get('/payments/application-id', async (req: Request, res: Response) => {
+      try {
+        const applicationId = process.env.SQUARE_APPLICATION_ID;
+        if (!applicationId) {
+          return res.status(500).json({
+            error: 'Square application ID not configured',
+          });
+        }
+        return res.json({
+          application_id: applicationId,
+          environment: process.env.SQUARE_ENVIRONMENT || 'sandbox',
+        });
+      } catch (error: any) {
+        Logger.error('Failed to get Square application ID', error);
+        return res.status(500).json({
+          error: error.message || 'Failed to retrieve Square application ID',
+        });
+      }
+    });
+    
+    app.use('/', publicPaymentRouter); // Other public payment routes
+    
     // Protected routes (require authentication)
     app.use('/employees', employeesRouter);
     app.use('/airports', airportRouter);
@@ -103,6 +127,7 @@ async function startServer() {
     app.use('/inventory', inventoryRouter);
     app.use('/tax-charges', taxChargeRouter);
     app.use('/fbos', fboRouter);
+    app.use('/', paymentRouter); // Payment routes are prefixed in the router
 
     // Root endpoint
     app.get('/', (req: Request, res: Response) => {

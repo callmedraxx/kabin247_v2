@@ -68,8 +68,11 @@ export class InMemoryOrderRepository implements OrderRepository {
   async create(orderData: CreateOrderDTO, orderNumber: string): Promise<Order> {
     const now = new Date();
     
-    // Calculate subtotal and total
-    const subtotal = orderData.items.reduce((sum, item) => sum + item.price, 0);
+    // Calculate subtotal and total (price * quantity for each item)
+    const subtotal = orderData.items.reduce((sum, item) => {
+      const qty = parseFloat(item.portion_size) || 1;
+      return sum + (item.price * qty);
+    }, 0);
     const serviceCharge = orderData.service_charge || 0;
     const deliveryFee = orderData.delivery_fee || 0;
     const coordinationFee = orderData.coordination_fee || 0;
@@ -263,7 +266,10 @@ export class InMemoryOrderRepository implements OrderRepository {
       }));
       this.orderItems.push(...newItems);
       
-      subtotal = orderData.items.reduce((sum, item) => sum + item.price, 0);
+      subtotal = orderData.items.reduce((sum, item) => {
+        const qty = parseFloat(item.portion_size) || 1;
+        return sum + (item.price * qty);
+      }, 0);
     }
 
     if (orderData.service_charge !== undefined) {

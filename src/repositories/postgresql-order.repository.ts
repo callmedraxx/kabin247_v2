@@ -71,8 +71,11 @@ export class PostgreSQLOrderRepository implements OrderRepository {
   }
 
   async create(orderData: CreateOrderDTO, orderNumber: string): Promise<Order> {
-    // Calculate subtotal and total
-    const subtotal = orderData.items.reduce((sum, item) => sum + item.price, 0);
+    // Calculate subtotal and total (price * quantity for each item)
+    const subtotal = orderData.items.reduce((sum, item) => {
+      const qty = parseFloat(item.portion_size) || 1;
+      return sum + (item.price * qty);
+    }, 0);
     const serviceCharge = orderData.service_charge || 0;
     const deliveryFee = orderData.delivery_fee || 0;
     const coordinationFee = orderData.coordination_fee || 0;
@@ -138,8 +141,8 @@ export class PostgreSQLOrderRepository implements OrderRepository {
       const item = orderData.items[i];
       const itemQuery = `
         INSERT INTO order_items (
-          order_id, menu_item_id, item_name, item_description, portion_size, price, category, packaging, sort_order
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+          order_id, menu_item_id, item_name, item_description, portion_size, portion_serving, price, category, packaging, sort_order
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
         RETURNING *
       `;
       const itemResult = await this.db.query(itemQuery, [
@@ -148,6 +151,7 @@ export class PostgreSQLOrderRepository implements OrderRepository {
         item.item_name,
         item.item_description || null,
         item.portion_size,
+        item.portion_serving || null,
         item.price,
         item.category || null,
         item.packaging || null,
@@ -635,14 +639,15 @@ export class PostgreSQLOrderRepository implements OrderRepository {
       for (let i = 0; i < orderData.items.length; i++) {
         const item = orderData.items[i];
         await this.db.query(
-          `INSERT INTO order_items (order_id, menu_item_id, item_name, item_description, portion_size, price, category, packaging, sort_order)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+          `INSERT INTO order_items (order_id, menu_item_id, item_name, item_description, portion_size, portion_serving, price, category, packaging, sort_order)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
           [
             id,
             item.menu_item_id || null,
             item.item_name,
             item.item_description || null,
             item.portion_size,
+            item.portion_serving || null,
             item.price,
             item.category || null,
             item.packaging || null,
@@ -659,7 +664,8 @@ export class PostgreSQLOrderRepository implements OrderRepository {
       orderData.restaurant_pickup_fee !== undefined || orderData.airport_pickup_fee !== undefined;
     
     if (orderData.items || feeChanged) {
-      const itemsQuery = 'SELECT SUM(price) as subtotal FROM order_items WHERE order_id = $1';
+      // Calculate subtotal as sum of (price * quantity) for each item
+      const itemsQuery = 'SELECT SUM(price * COALESCE(portion_size::numeric, 1)) as subtotal FROM order_items WHERE order_id = $1';
       const itemsResult = await this.db.query(itemsQuery, [id]);
       const subtotal = parseFloat(itemsResult.rows[0].subtotal || '0');
       
