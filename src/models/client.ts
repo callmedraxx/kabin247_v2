@@ -6,6 +6,7 @@ export interface Client {
   email?: string;
   contact_number?: string;
   additional_emails?: string[];
+  square_customer_id?: string;
   created_at?: Date;
   updated_at?: Date;
 }

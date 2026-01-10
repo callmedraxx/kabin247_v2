@@ -143,6 +143,8 @@ export class PostgreSQLClientRepository implements ClientRepository {
       updates.push(`additional_emails = $${paramIndex++}`);
       values.push(JSON.stringify(client.additional_emails || []));
     }
+    // Note: square_customer_id is not part of CreateClientDTO, but can be updated via Partial<Client>
+    // We'll handle it separately if needed via a direct update method
 
     if (updates.length === 0) {
       return this.findById(id);
@@ -198,6 +200,17 @@ export class PostgreSQLClientRepository implements ClientRepository {
       normalized.email || null,
       normalized.contact_number || null,
     ]);
+    return result.rows[0] || null;
+  }
+
+  async updateSquareCustomerId(clientId: number, squareCustomerId: string): Promise<Client | null> {
+    const query = `
+      UPDATE clients
+      SET square_customer_id = $1, updated_at = NOW()
+      WHERE id = $2
+      RETURNING *
+    `;
+    const result = await this.db.query(query, [squareCustomerId, clientId]);
     return result.rows[0] || null;
   }
 }

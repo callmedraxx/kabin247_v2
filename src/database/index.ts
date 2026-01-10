@@ -42,6 +42,7 @@ export async function initializeDatabase(): Promise<void> {
     await createInvitesTable();
     await createPasswordResetOtpsTable();
     await createPaymentTables();
+    await createInvoicesTable();
   }
 }
 
@@ -323,6 +324,15 @@ async function createOrdersTable(): Promise<void> {
     console.log('additional_emails column added to caterers');
   } catch (error) {
     console.error('Error adding additional_emails column to caterers:', error);
+  }
+
+  // Add square_customer_id column to clients for existing databases
+  try {
+    await dbAdapter!.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS square_customer_id VARCHAR(255);`);
+    await dbAdapter!.query(`CREATE INDEX IF NOT EXISTS idx_clients_square_customer_id ON clients(square_customer_id);`);
+    console.log('square_customer_id column added to clients');
+  } catch (error) {
+    console.error('Error adding square_customer_id column to clients:', error);
   }
 }
 
@@ -671,6 +681,41 @@ async function createPaymentTables(): Promise<void> {
     console.log('Payment tables created successfully');
   } catch (error) {
     console.error('Error creating payment tables:', error);
+  }
+}
+
+async function createInvoicesTable(): Promise<void> {
+  const createTableQuery = `
+    CREATE TABLE IF NOT EXISTS invoices (
+      id SERIAL PRIMARY KEY,
+      order_id INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+      square_invoice_id VARCHAR(255) NOT NULL UNIQUE,
+      public_url TEXT,
+      reference_id VARCHAR(255) NOT NULL,
+      status VARCHAR(50) NOT NULL CHECK (status IN ('pending', 'paid', 'cancelled', 'failed')),
+      amount DECIMAL(10,2) NOT NULL,
+      currency VARCHAR(3) NOT NULL DEFAULT 'USD',
+      delivery_method VARCHAR(50) NOT NULL CHECK (delivery_method IN ('EMAIL', 'SHARE_MANUALLY')),
+      recipient_email VARCHAR(255),
+      email_sent_at TIMESTAMP,
+      created_by INTEGER NOT NULL REFERENCES users(id),
+      created_at TIMESTAMP DEFAULT NOW(),
+      updated_at TIMESTAMP DEFAULT NOW(),
+      paid_at TIMESTAMP
+    );
+    
+    CREATE INDEX IF NOT EXISTS idx_invoices_order_id ON invoices(order_id);
+    CREATE INDEX IF NOT EXISTS idx_invoices_square_invoice_id ON invoices(square_invoice_id);
+    CREATE INDEX IF NOT EXISTS idx_invoices_reference_id ON invoices(reference_id);
+    CREATE INDEX IF NOT EXISTS idx_invoices_status ON invoices(status);
+    CREATE INDEX IF NOT EXISTS idx_invoices_created_by ON invoices(created_by);
+  `;
+  
+  try {
+    await dbAdapter!.query(createTableQuery);
+    console.log('Invoices table created successfully');
+  } catch (error) {
+    console.error('Error creating invoices table:', error);
   }
 }
 

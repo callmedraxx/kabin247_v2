@@ -116,4 +116,16 @@ export class InMemoryClientRepository implements ClientRepository {
       );
     }) || null;
   }
+
+  async updateSquareCustomerId(clientId: number, squareCustomerId: string): Promise<Client | null> {
+    const index = this.clients.findIndex(c => c.id === clientId);
+    if (index === -1) return null;
+
+    this.clients[index] = {
+      ...this.clients[index],
+      square_customer_id: squareCustomerId,
+      updated_at: new Date(),
+    };
+    return this.clients[index];
+  }
 }

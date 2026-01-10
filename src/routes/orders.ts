@@ -9,6 +9,29 @@ import { requireAuth, requirePermission, requireRole } from '../middleware/auth'
 export const orderRouter = Router();
 const orderService = new OrderService();
 
+/**
+ * Properly encode filename for Content-Disposition header
+ * Uses RFC 5987 encoding (filename*=UTF-8''...) for filenames with special characters
+ * Falls back to simple quoted string for ASCII-only filenames without problematic chars
+ */
+function encodeContentDispositionFilename(filename: string): string {
+  // Check if filename contains only safe ASCII characters
+  // Safe: alphanumeric, spaces, dots, hyphens, underscores (no brackets, quotes, etc.)
+  const safeASCIIPattern = /^[a-zA-Z0-9._\-\s]+$/;
+  const isSafeASCII = safeASCIIPattern.test(filename);
+  
+  if (isSafeASCII) {
+    // Simple quoted string for safe ASCII filenames
+    const encoded = filename.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+    return encoded;
+  } else {
+    // Use RFC 5987 encoding for filenames with special characters
+    // Format: filename*=UTF-8''encoded-filename
+    const encoded = encodeURIComponent(filename);
+    return encoded;
+  }
+}
+
 // All order routes require authentication
 orderRouter.use(requireAuth);
 
@@ -943,11 +966,34 @@ orderRouter.get('/:id/pdf', requirePermission('orders.read'), async (req: Reques
     const download = req.query.download !== 'false';
     const filename = pdf.filename;
 
+    // Properly encode filename for Content-Disposition header
+    const encodedFilename = encodeContentDispositionFilename(filename);
+    // Check if we used RFC 5987 encoding (contains % from encodeURIComponent)
+    const usesRFC5987 = encodedFilename.includes('%');
+    // Create sanitized fallback filename - remove ALL non-printable, zero-width, and problematic chars
+    // Keep only safe ASCII: alphanumeric, spaces, dots, hyphens, underscores
+    // This removes zero-width spaces (8203), control characters, and other problematic chars
+    const fallbackFilename = filename
+      .replace(/[^a-zA-Z0-9._\-\s]/g, '_')  // Replace any non-safe char with underscore (includes zero-width spaces)
+      .replace(/\s+/g, ' ')                  // Collapse multiple spaces
+      .trim()                                 // Remove leading/trailing spaces
+      .replace(/\\/g, '\\\\')                // Escape backslashes
+      .replace(/"/g, '\\"');                 // Escape quotes
+    const contentDisposition = download 
+      ? (usesRFC5987 
+          ? `attachment; filename="${fallbackFilename}"; filename*=UTF-8''${encodedFilename}`
+          : `attachment; filename="${encodedFilename}"`)
+      : (usesRFC5987
+          ? `inline; filename="${fallbackFilename}"; filename*=UTF-8''${encodedFilename}`
+          : `inline; filename="${encodedFilename}"`);
+
     res.setHeader('Content-Type', pdf.mimeType);
-    res.setHeader(
-      'Content-Disposition',
-      download ? `attachment; filename=${filename}` : `inline; filename=${filename}`
-    );
+    
+    try {
+      res.setHeader('Content-Disposition', contentDisposition);
+    } catch (headerError: any) {
+      throw headerError;
+    }
 
     res.end(pdf.buffer);
   } catch (error: any) {
@@ -1047,11 +1093,34 @@ orderRouter.get('/:id/pdf-b', requirePermission('orders.read'), async (req: Requ
     const download = req.query.download !== 'false';
     const filename = pdf.filename;
 
+    // Properly encode filename for Content-Disposition header
+    const encodedFilename = encodeContentDispositionFilename(filename);
+    // Check if we used RFC 5987 encoding (contains % from encodeURIComponent)
+    const usesRFC5987 = encodedFilename.includes('%');
+    // Create sanitized fallback filename - remove ALL non-printable, zero-width, and problematic chars
+    // Keep only safe ASCII: alphanumeric, spaces, dots, hyphens, underscores
+    // This removes zero-width spaces (8203), control characters, and other problematic chars
+    const fallbackFilename = filename
+      .replace(/[^a-zA-Z0-9._\-\s]/g, '_')  // Replace any non-safe char with underscore (includes zero-width spaces)
+      .replace(/\s+/g, ' ')                  // Collapse multiple spaces
+      .trim()                                 // Remove leading/trailing spaces
+      .replace(/\\/g, '\\\\')                // Escape backslashes
+      .replace(/"/g, '\\"');                 // Escape quotes
+    const contentDisposition = download 
+      ? (usesRFC5987 
+          ? `attachment; filename="${fallbackFilename}"; filename*=UTF-8''${encodedFilename}`
+          : `attachment; filename="${encodedFilename}"`)
+      : (usesRFC5987
+          ? `inline; filename="${fallbackFilename}"; filename*=UTF-8''${encodedFilename}`
+          : `inline; filename="${encodedFilename}"`);
+
     res.setHeader('Content-Type', pdf.mimeType);
-    res.setHeader(
-      'Content-Disposition',
-      download ? `attachment; filename=${filename}` : `inline; filename=${filename}`
-    );
+    
+    try {
+      res.setHeader('Content-Disposition', contentDisposition);
+    } catch (headerError: any) {
+      throw headerError;
+    }
 
     res.end(pdf.buffer);
   } catch (error: any) {

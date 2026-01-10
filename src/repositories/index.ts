@@ -39,6 +39,8 @@ import { PasswordResetRepository } from './password-reset.repository';
 import { PostgreSQLPasswordResetRepository } from './postgresql-password-reset.repository';
 import { PaymentRepository } from './payment.repository';
 import { PostgreSQLPaymentRepository } from './postgresql-payment.repository';
+import { InvoiceRepository } from './invoice.repository';
+import { PostgreSQLInvoiceRepository } from './postgresql-invoice.repository';
 
 let airportRepository: AirportRepository | null = null;
 let catererRepository: CatererRepository | null = null;
@@ -196,6 +198,7 @@ let inviteRepository: InviteRepository | null = null;
 let refreshTokenRepository: RefreshTokenRepository | null = null;
 let passwordResetRepository: PasswordResetRepository | null = null;
 let paymentRepository: PaymentRepository | null = null;
+let invoiceRepository: InvoiceRepository | null = null;
 
 export function getUserRepository(): UserRepository {
   if (!userRepository) {
@@ -265,5 +268,19 @@ export function getPaymentRepository(): PaymentRepository {
     }
   }
   return paymentRepository;
+}
+
+export function getInvoiceRepository(): InvoiceRepository {
+  if (!invoiceRepository) {
+    const dbType = process.env.DB_TYPE || 'memory';
+    const nodeEnv = process.env.NODE_ENV || 'development';
+
+    if (dbType === 'memory' || (nodeEnv === 'development' && dbType !== 'postgres')) {
+      throw new Error('Invoice repository requires PostgreSQL');
+    } else {
+      invoiceRepository = new PostgreSQLInvoiceRepository(getDatabase());
+    }
+  }
+  return invoiceRepository;
 }
 

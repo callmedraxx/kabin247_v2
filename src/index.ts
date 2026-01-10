@@ -26,14 +26,22 @@ const corsOptions = {
       return callback(null, true);
     }
     
-    // Allowed origins
+    // Allowed origins - include common localhost ports for development
     const allowedOrigins = [
       env.FRONTEND_URL,
       'http://localhost:3000',
+      'http://localhost:3001',
       'http://localhost:3002',
       'http://127.0.0.1:3000',
+      'http://127.0.0.1:3001',
       'http://127.0.0.1:3002',
     ];
+    
+    // In development, allow localhost origins on any port
+    const isDevelopment = process.env.NODE_ENV !== 'production';
+    if (isDevelopment && (origin.includes('localhost') || origin.includes('127.0.0.1'))) {
+      return callback(null, true);
+    }
     
     // Check if origin matches allowed origins
     if (allowedOrigins.includes(origin) || origin.startsWith(env.FRONTEND_URL)) {
@@ -44,7 +52,9 @@ const corsOptions = {
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
+  exposedHeaders: ['Content-Type', 'Authorization'],
+  optionsSuccessStatus: 200, // Some legacy browsers choke on 204
 };
 
 // Middleware
@@ -78,6 +88,8 @@ async function startServer() {
     const { taxChargeRouter } = await import('./routes/tax-charges');
     const { fboRouter } = await import('./routes/fbos');
     const { paymentRouter, publicPaymentRouter } = await import('./routes/payments');
+    const { invoiceRouter } = await import('./routes/invoices');
+    const { webhookRouter } = await import('./routes/webhooks');
 
     // Swagger Documentation
     const swaggerSpec = setupSwagger();
@@ -115,6 +127,9 @@ async function startServer() {
     
     app.use('/', publicPaymentRouter); // Other public payment routes
     
+    // Webhook routes (no auth required - Square calls these directly)
+    app.use('/webhooks', webhookRouter);
+    
     // Protected routes (require authentication)
     app.use('/employees', employeesRouter);
     app.use('/airports', airportRouter);
@@ -128,6 +143,7 @@ async function startServer() {
     app.use('/tax-charges', taxChargeRouter);
     app.use('/fbos', fboRouter);
     app.use('/', paymentRouter); // Payment routes are prefixed in the router
+    app.use('/', invoiceRouter); // Invoice routes are prefixed in the router
 
     // Root endpoint
     app.get('/', (req: Request, res: Response) => {

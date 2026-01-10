@@ -9,4 +9,5 @@ export interface ClientRepository {
   deleteMany(ids: number[]): Promise<number>;
   count(): Promise<number>;
   findDuplicate(client: CreateClientDTO): Promise<Client | null>;
+  updateSquareCustomerId(clientId: number, squareCustomerId: string): Promise<Client | null>;
 }
