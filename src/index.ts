@@ -29,12 +29,14 @@ const corsOptions = {
     // Allowed origins - include common localhost ports for development
     const allowedOrigins = [
       env.FRONTEND_URL,
-      'http://localhost:3000',
+      'http://localhost:3000', // Explicitly allowed for local development
       'http://localhost:3001',
       'http://localhost:3002',
       'http://127.0.0.1:3000',
       'http://127.0.0.1:3001',
       'http://127.0.0.1:3002',
+      'http://68.183.155.95:3001',
+      'https://68.183.155.95:3001',
     ];
     
     // In development, allow localhost origins on any port

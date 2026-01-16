@@ -62,7 +62,7 @@ invoiceRouter.post('/orders/:id/invoices', async (req: Request, res: Response) =
       return res.status(404).json({ error: 'Order not found' });
     }
 
-    const { delivery_method, recipient_email } = req.body as SendInvoiceRequest;
+    const { delivery_method, recipient_email, additional_emails } = req.body as SendInvoiceRequest;
 
     if (!delivery_method || !['EMAIL', 'SHARE_MANUALLY'].includes(delivery_method)) {
       return res.status(400).json({
@@ -76,12 +76,22 @@ invoiceRouter.post('/orders/:id/invoices', async (req: Request, res: Response) =
       });
     }
 
+    // Validate additional_emails if provided
+    let validAdditionalEmails: string[] = [];
+    if (additional_emails && Array.isArray(additional_emails)) {
+      validAdditionalEmails = additional_emails
+        .filter((email: any) => email && typeof email === 'string' && email.trim())
+        .map((email: string) => email.trim())
+        .filter((email: string, index: number, self: string[]) => self.indexOf(email) === index); // Remove duplicates
+    }
+
     // Create invoice
     const result = await invoiceService.createInvoice(
       orderId,
       {
         delivery_method,
         recipient_email: recipient_email || order.client?.email,
+        additional_emails: validAdditionalEmails.length > 0 ? validAdditionalEmails : undefined,
       },
       adminUserId
     );
@@ -94,13 +104,15 @@ invoiceRouter.post('/orders/:id/invoices', async (req: Request, res: Response) =
 
     // If EMAIL delivery, Square sends automatically after publishing
     // If SHARE_MANUALLY, we need to publish first to get public_url
+    let finalPublicUrl = result.public_url;
     if (delivery_method === 'SHARE_MANUALLY' && result.invoice) {
       // Publish invoice to get public_url
       const publishResult = await invoiceService.publishInvoice(result.invoice.id!, 0);
       if (publishResult.success && publishResult.invoice?.public_url) {
         // Update invoice with public_url
         await invoiceRepository.updatePublicUrl(result.invoice.id!, publishResult.invoice.public_url);
-        result.public_url = publishResult.invoice.public_url;
+        finalPublicUrl = publishResult.invoice.public_url;
+        result.public_url = finalPublicUrl;
       }
     } else if (delivery_method === 'EMAIL' && result.invoice) {
       // Publish invoice so Square can send it
@@ -125,6 +137,49 @@ invoiceRouter.post('/orders/:id/invoices', async (req: Request, res: Response) =
           invoiceId: result.invoice.id,
           squareInvoiceId: result.invoice.square_invoice_id,
         });
+        // Update public_url if available
+        if (publishResult.invoice?.public_url) {
+          await invoiceRepository.updatePublicUrl(result.invoice.id!, publishResult.invoice.public_url);
+          finalPublicUrl = publishResult.invoice.public_url;
+          result.invoice.public_url = finalPublicUrl;
+        }
+      }
+    }
+
+    // Send payment links to additional recipients if provided
+    let additionalEmailsResult: { sentTo: string[]; failed: Array<{ email: string; error: string }> } | null = null;
+    if (validAdditionalEmails.length > 0 && result.invoice && finalPublicUrl) {
+      Logger.info('Sending payment links to additional recipients', {
+        orderId,
+        invoiceId: result.invoice.id,
+        additionalRecipientsCount: validAdditionalEmails.length,
+      });
+
+      const sendResult = await invoiceService.sendPaymentLinkToMultipleRecipients(
+        order,
+        { ...result.invoice, public_url: finalPublicUrl },
+        validAdditionalEmails
+      );
+
+      additionalEmailsResult = {
+        sentTo: sendResult.sentTo,
+        failed: sendResult.failed,
+      };
+
+      if (sendResult.failed.length > 0) {
+        Logger.warn('Some additional recipients failed to receive payment link', {
+          orderId,
+          invoiceId: result.invoice.id,
+          failed: sendResult.failed,
+        });
+      }
+
+      if (sendResult.sentTo.length > 0) {
+        Logger.info('Payment links sent to additional recipients', {
+          orderId,
+          invoiceId: result.invoice.id,
+          sentTo: sendResult.sentTo,
+        });
       }
     }
 
@@ -132,15 +187,18 @@ invoiceRouter.post('/orders/:id/invoices', async (req: Request, res: Response) =
       orderId,
       invoiceId: result.invoice?.id,
       deliveryMethod: delivery_method,
+      additionalEmailsSent: additionalEmailsResult?.sentTo.length || 0,
     });
 
     return res.json({
       success: true,
       invoice: result.invoice,
-      public_url: result.public_url,
+      public_url: finalPublicUrl,
+      additional_emails_sent: additionalEmailsResult?.sentTo || [],
+      additional_emails_failed: additionalEmailsResult?.failed || [],
       message: delivery_method === 'EMAIL' 
-        ? 'Invoice created and sent via Square email'
-        : 'Invoice created. Use the public_url to send via your email system.',
+        ? 'Invoice created and sent via Square email' + (additionalEmailsResult?.sentTo.length ? `, payment links sent to ${additionalEmailsResult.sentTo.length} additional recipient(s)` : '')
+        : 'Invoice created. Use the public_url to send via your email system.' + (additionalEmailsResult?.sentTo.length ? ` Payment links sent to ${additionalEmailsResult.sentTo.length} additional recipient(s).` : ''),
     });
   } catch (error: any) {
     Logger.error('Failed to create invoice', error, {
@@ -247,12 +305,8 @@ invoiceRouter.post('/orders/:id/invoices/send', async (req: Request, res: Respon
       return res.status(404).json({ error: 'Invoice not found for this order' });
     }
 
-    if (invoice.delivery_method !== 'SHARE_MANUALLY') {
-      return res.status(400).json({
-        error: 'This invoice was created with EMAIL delivery method. Square handles email delivery.',
-      });
-    }
-
+    // Allow sending payment link via custom email regardless of original delivery method
+    // This enables sending to additional recipients after Square has sent the primary email
     if (!invoice.public_url) {
       return res.status(400).json({
         error: 'Invoice does not have a public URL. Please publish the invoice first.',
@@ -264,21 +318,29 @@ invoiceRouter.post('/orders/:id/invoices/send', async (req: Request, res: Respon
       return res.status(400).json({ error: 'Email service is not configured' });
     }
 
-    // Create invoice email template
+    // Create professional invoice email using the new template
     const subject = `Invoice for Order ${order.order_number} - Payment Required`;
-    const body = `
-      <p>Dear ${order.client_name},</p>
-      <p>Please find below the payment link for your order <strong>${order.order_number}</strong>.</p>
-      <p><strong>Total Amount: $${order.total.toFixed(2)}</strong></p>
-      <p>Click the link below to complete your payment:</p>
-      <p><a href="${invoice.public_url}" style="display: inline-block; padding: 12px 24px; background-color: #0070f3; color: white; text-decoration: none; border-radius: 4px; margin: 20px 0;">Pay Invoice</a></p>
-      <p>Or copy and paste this link into your browser:</p>
-      <p>${invoice.public_url}</p>
-      <p>If you have any questions, please contact us.</p>
-      <p>Thank you,<br>Kabin247 Team</p>
-    `;
+    const orderTotal = typeof order.total === 'number' ? order.total : parseFloat(order.total) || 0;
+    
+    // Get client name - try multiple sources
+    const clientName = order.client?.full_name || order.client_name || 'Valued Customer';
+    
+    // Prepare order items for the email
+    const orderItems = order.items?.map(item => ({
+      name: item.item_name || 'Item',
+      description: item.item_description || undefined,
+      price: typeof item.price === 'number' ? item.price : parseFloat(String(item.price)) || 0,
+    })) || [];
 
-    const html = emailService.generateEmailHTML(body, order.order_number || '');
+    const html = emailService.generateInvoiceEmailHTML({
+      orderNumber: order.order_number || '',
+      clientName,
+      total: orderTotal,
+      paymentUrl: invoice.public_url!,
+      deliveryDate: order.delivery_date,
+      items: orderItems.length > 0 ? orderItems : undefined,
+      message: order.notes || order.description || undefined,
+    });
 
     const result = await emailService.sendEmail({
       to: recipient_email,

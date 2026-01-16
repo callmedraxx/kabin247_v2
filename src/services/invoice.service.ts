@@ -4,10 +4,12 @@ import { getInvoiceRepository, getOrderRepository, getClientRepository } from '.
 import { Invoice, CreateInvoiceDTO, InvoiceLineItem } from '../models/invoice';
 import { Order } from '../models/order';
 import { Logger } from '../utils/logger';
+import { getEmailService } from './email.service';
 
 export interface CreateInvoiceOptions {
   delivery_method: 'EMAIL' | 'SHARE_MANUALLY';
   recipient_email?: string;
+  additional_emails?: string[];
 }
 
 export interface CreateInvoiceResponse {
@@ -1005,6 +1007,105 @@ export class InvoiceService {
         error: error.message || 'Failed to cancel invoice',
       };
     }
+  }
+
+  /**
+   * Send payment link email to multiple recipients
+   * Used for sending to additional recipients after primary invoice is sent
+   */
+  async sendPaymentLinkToMultipleRecipients(
+    order: Order,
+    invoice: Invoice,
+    recipientEmails: string[]
+  ): Promise<{ success: boolean; sentTo: string[]; failed: Array<{ email: string; error: string }> }> {
+    const emailService = getEmailService();
+    if (!emailService.isConfigured()) {
+      return {
+        success: false,
+        sentTo: [],
+        failed: recipientEmails.map(email => ({ email, error: 'Email service is not configured' })),
+      };
+    }
+
+    if (!invoice.public_url) {
+      return {
+        success: false,
+        sentTo: [],
+        failed: recipientEmails.map(email => ({ email, error: 'Invoice does not have a public URL' })),
+      };
+    }
+
+    const sentTo: string[] = [];
+    const failed: Array<{ email: string; error: string }> = [];
+
+    // Create professional invoice email using the new template
+    const subject = `Invoice for Order ${order.order_number} - Payment Required`;
+    const orderTotal = typeof order.total === 'number' ? order.total : parseFloat(order.total) || 0;
+    
+    // Get client name - try multiple sources
+    const clientName = order.client?.full_name || order.client_name || 'Valued Customer';
+    
+    // Prepare order items for the email
+    const orderItems = order.items?.map(item => ({
+      name: item.item_name || 'Item',
+      description: item.item_description || undefined,
+      price: typeof item.price === 'number' ? item.price : parseFloat(String(item.price)) || 0,
+    })) || [];
+
+    const html = emailService.generateInvoiceEmailHTML({
+      orderNumber: order.order_number || '',
+      clientName,
+      total: orderTotal,
+      paymentUrl: invoice.public_url!,
+      deliveryDate: order.delivery_date,
+      items: orderItems.length > 0 ? orderItems : undefined,
+      message: order.notes || order.description || undefined,
+    });
+
+    // Send to each recipient
+    for (const email of recipientEmails) {
+      if (!email || !email.trim()) {
+        continue; // Skip empty emails
+      }
+
+      try {
+        const result = await emailService.sendEmail({
+          to: email.trim(),
+          subject,
+          html,
+        });
+
+        if (result.success) {
+          sentTo.push(email.trim());
+          Logger.info('Payment link email sent to additional recipient', {
+            orderId: order.id,
+            invoiceId: invoice.id,
+            recipient: email.trim(),
+          });
+        } else {
+          failed.push({ email: email.trim(), error: result.error || 'Failed to send email' });
+          Logger.warn('Failed to send payment link email to additional recipient', {
+            orderId: order.id,
+            invoiceId: invoice.id,
+            recipient: email.trim(),
+            error: result.error,
+          });
+        }
+      } catch (error: any) {
+        failed.push({ email: email.trim(), error: error.message || 'Failed to send email' });
+        Logger.error('Error sending payment link email to additional recipient', error, {
+          orderId: order.id,
+          invoiceId: invoice.id,
+          recipient: email.trim(),
+        });
+      }
+    }
+
+    return {
+      success: failed.length === 0,
+      sentTo,
+      failed,
+    };
   }
 }
 

@@ -41,6 +41,7 @@ export interface CreateInvoiceDTO {
 export interface SendInvoiceRequest {
   delivery_method: 'EMAIL' | 'SHARE_MANUALLY';
   recipient_email?: string;
+  additional_emails?: string[];
 }
 
 export interface UpdateInvoiceStatusDTO {

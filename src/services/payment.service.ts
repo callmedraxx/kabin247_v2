@@ -278,14 +278,14 @@ export class PaymentService {
           amount: transaction.amount,
         });
 
-        // If payment is completed, update order status to 'paid'
+        // If payment is completed, update order is_paid to true
         if (paymentStatus === 'completed') {
-          Logger.info('Updating order status to paid', {
+          Logger.info('Updating order payment status to paid', {
             orderId: paymentData.order_id,
             previousStatus: order.status,
           });
-          await this.orderRepository.updateStatus(paymentData.order_id, 'paid');
-          Logger.info('Order status updated to paid', {
+          await this.orderRepository.update(paymentData.order_id, { is_paid: true });
+          Logger.info('Order payment status updated to paid', {
             orderId: paymentData.order_id,
           });
         }
@@ -938,15 +938,15 @@ export class PaymentService {
         squareCustomerId: transaction.square_customer_id || 'none',
       });
 
-      // Update order status to 'paid' (same as manual payments)
-      Logger.info('Updating order status to paid', {
+      // Update order payment status to paid (same as manual payments)
+      Logger.info('Updating order payment status to paid', {
         orderId: invoice.order_id,
         previousStatus: order.status,
       });
 
-      await this.orderRepository.updateStatus(invoice.order_id, 'paid');
+      await this.orderRepository.update(invoice.order_id, { is_paid: true });
 
-      Logger.info('✓ Order status updated to paid', {
+      Logger.info('✓ Order payment status updated to paid', {
         orderId: invoice.order_id,
       });
 

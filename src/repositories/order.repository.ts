@@ -13,4 +13,5 @@ export interface OrderRepository {
   count(): Promise<number>;
   savePdf(orderId: number, buffer: Buffer, filename: string, mimeType: string): Promise<void>;
   getPdf(orderId: number): Promise<{ pdf_data: Buffer; filename: string; mime_type: string; updated_at?: Date } | null>;
+  incrementRevisionCount(id: number): Promise<Order | null>;
 }

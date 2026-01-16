@@ -339,7 +339,8 @@ export class InMemoryOrderRepository implements OrderRepository {
       restaurant_pickup_fee: restaurantPickupFee,
       airport_pickup_fee: airportPickupFee,
       total,
-      revision_count: (existingOrder.revision_count || 0) + 1,
+      // Note: revision_count is NOT incremented on regular updates
+      // It is only incremented when the order is sent to the caterer (see incrementRevisionCount method)
       updated_at: new Date(),
     };
 
@@ -368,6 +369,23 @@ export class InMemoryOrderRepository implements OrderRepository {
     this.orders.splice(index, 1);
     this.orderItems = this.orderItems.filter(item => item.order_id !== id);
     return true;
+  }
+
+  /**
+   * Increment the revision count for an order.
+   * This should only be called when the order is edited AND sent to the caterer.
+   */
+  async incrementRevisionCount(id: number): Promise<Order | null> {
+    const index = this.orders.findIndex(o => o.id === id);
+    if (index === -1) return null;
+
+    this.orders[index] = {
+      ...this.orders[index],
+      revision_count: (this.orders[index].revision_count || 0) + 1,
+      updated_at: new Date(),
+    };
+
+    return this.findById(id);
   }
 
   async deleteMany(ids: number[]): Promise<number> {

@@ -5,6 +5,7 @@ import { Logger } from '../utils/logger';
 import { generateOrderHTML, generateOrderHTMLB } from '../utils/order-pdf';
 import { getEmailService, EmailRecipient } from '../services/email.service';
 import { requireAuth, requirePermission, requireRole } from '../middleware/auth';
+import { getOrderRepository } from '../repositories';
 
 export const orderRouter = Router();
 const orderService = new OrderService();
@@ -706,13 +707,6 @@ orderRouter.patch('/:id/status', requirePermission('orders.update_status'), asyn
     const id = parseInt(req.params.id);
     const statusData: OrderStatusUpdateDTO = req.body;
     
-    // Prevent manual status update to 'paid' - this can only be set automatically via payment processing
-    if (statusData.status === 'paid') {
-      return res.status(403).json({ 
-        error: 'Order status cannot be manually set to "paid". Payment must be processed through the payment system.' 
-      });
-    }
-    
     const order = await orderService.updateOrderStatus(id, statusData);
     if (!order) {
       Logger.warn('Order not found for status update', {
@@ -736,6 +730,74 @@ orderRouter.patch('/:id/status', requirePermission('orders.update_status'), asyn
       body: req.body,
     });
     res.status(400).json({ error: error.message });
+  }
+});
+
+/**
+ * @swagger
+ * /orders/{id}/payment-status:
+ *   patch:
+ *     summary: Update order payment status (ADMIN only)
+ *     tags: [Orders]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - is_paid
+ *             properties:
+ *               is_paid:
+ *                 type: boolean
+ *     responses:
+ *       200:
+ *         description: Payment status updated successfully
+ *       403:
+ *         description: Only administrators can update payment status
+ *       404:
+ *         description: Order not found
+ */
+orderRouter.patch('/:id/payment-status', requireRole('ADMIN'), requirePermission('orders.update'), async (req: Request, res: Response) => {
+  try {
+    const id = parseInt(req.params.id);
+    const { is_paid } = req.body;
+    
+    if (typeof is_paid !== 'boolean') {
+      return res.status(400).json({ error: 'is_paid must be a boolean value' });
+    }
+    
+    const order = await orderService.updateOrder(id, { is_paid });
+    if (!order) {
+      Logger.warn('Order not found for payment status update', {
+        method: 'PATCH',
+        url: `/orders/${id}/payment-status`,
+        orderId: id,
+      });
+      return res.status(404).json({ error: 'Order not found' });
+    }
+    res.json({
+      id: order.id,
+      order_number: order.order_number,
+      is_paid: order.is_paid,
+      updated_at: order.updated_at,
+    });
+  } catch (error: any) {
+    Logger.error('Failed to update order payment status', error, {
+      method: 'PATCH',
+      url: `/orders/${req.params.id}/payment-status`,
+      orderId: req.params.id,
+      body: req.body,
+    });
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -854,18 +916,31 @@ orderRouter.get('/:id/preview', requirePermission('orders.read'), async (req: Re
     const host = req.get('X-Forwarded-Host') || req.get('host');
     const logoUrl = `${protocol}://${host}/assets/logo.png`;
     
-    // Pass logo URL to HTML generator
-    const orderWithLogo = { ...order, _logoUrl: logoUrl };
+    // Get changed fields from query parameters (optional - for highlighting changes in PDF)
+    const changedFields = req.query.changed_fields 
+      ? (Array.isArray(req.query.changed_fields) ? req.query.changed_fields : [req.query.changed_fields]).map(String)
+      : [];
+    const changedItemIds = req.query.changed_item_ids
+      ? (Array.isArray(req.query.changed_item_ids) ? req.query.changed_item_ids : [req.query.changed_item_ids]).map(Number).filter(id => !isNaN(id))
+      : [];
+    
+    // Pass logo URL and change tracking to HTML generator
+    const orderWithLogo = { 
+      ...order, 
+      _logoUrl: logoUrl,
+      _changedFields: changedFields,
+      _changedItemIds: changedItemIds
+    };
     
     // Route to PDF A or PDF B based on order status
-    // PDF A (with pricing): awaiting_client_approval, paid, delivered
+    // PDF A (with pricing): awaiting_client_approval, delivered, or is_paid=true
     // PDF B (no pricing): awaiting_quote, awaiting_caterer, caterer_confirmed, in_preparation, ready_for_delivery, cancelled, order_changed
     // Special handling:
     //   - caterer_confirmed: PDF B with client info and status "caterer confirmed" (not revision)
     //   - delivered: PDF A with pricing and client info
     let html: string;
-    const pdfAStatuses = ['awaiting_client_approval', 'paid', 'delivered'];
-    const usePdfA = pdfAStatuses.includes(order.status);
+    const pdfAStatuses = ['awaiting_client_approval', 'delivered'];
+    const usePdfA = pdfAStatuses.includes(order.status) || order.is_paid === true;
     
     // Log for debugging
     Logger.info('PDF Preview routing', {
@@ -875,6 +950,7 @@ orderRouter.get('/:id/preview', requirePermission('orders.read'), async (req: Re
       usePdfA,
       clientId: order.client_id,
       hasClient: !!order.client,
+      hasChanges: changedFields.length > 0 || changedItemIds.length > 0,
     });
     
     if (order.status === 'caterer_confirmed') {
@@ -931,15 +1007,35 @@ orderRouter.get('/:id/pdf', requirePermission('orders.read'), async (req: Reques
       return res.status(404).json({ error: 'Order not found' });
     }
     
+    // Get changed fields from query parameters (optional - for highlighting changes in PDF)
+    // If not provided, try to detect changes automatically from last sent snapshot
+    let changedFields: string[] = [];
+    let changedItemIds: number[] = [];
+    
+    if (req.query.changed_fields || req.query.changed_item_ids) {
+      // Use provided changes
+      changedFields = req.query.changed_fields 
+        ? (Array.isArray(req.query.changed_fields) ? req.query.changed_fields : [req.query.changed_fields]).map(String)
+        : [];
+      changedItemIds = req.query.changed_item_ids
+        ? (Array.isArray(req.query.changed_item_ids) ? req.query.changed_item_ids : [req.query.changed_item_ids]).map(Number).filter(id => !isNaN(id))
+        : [];
+    } else {
+      // Auto-detect changes from last sent snapshot
+      const changes = orderService.detectChangesFromLastSent(id, order);
+      changedFields = changes.changedFields;
+      changedItemIds = changes.changedItemIds;
+    }
+    
     // Route to PDF A or PDF B based on order status
-    // PDF A (with pricing): awaiting_client_approval, paid, delivered
+    // PDF A (with pricing): awaiting_client_approval, delivered, or is_paid=true
     // PDF B (no pricing): awaiting_quote, awaiting_caterer, caterer_confirmed, in_preparation, ready_for_delivery, cancelled, order_changed
     // Special handling:
     //   - caterer_confirmed: PDF B with client info and status "caterer confirmed" (not revision)
     //   - delivered: PDF A with pricing and client info
     let pdf: { buffer: Buffer; filename: string; mimeType: string; order: any };
-    const pdfAStatuses = ['awaiting_client_approval', 'paid', 'delivered'];
-    const usePdfA = pdfAStatuses.includes(order.status);
+    const pdfAStatuses = ['awaiting_client_approval', 'delivered'];
+    const usePdfA = pdfAStatuses.includes(order.status) || order.is_paid === true;
     
     // Log for debugging
     Logger.info('PDF Download routing', {
@@ -950,17 +1046,18 @@ orderRouter.get('/:id/pdf', requirePermission('orders.read'), async (req: Reques
       regenerate,
       clientId: order.client_id,
       hasClient: !!order.client,
+      hasChanges: changedFields.length > 0 || changedItemIds.length > 0,
     });
     
     if (order.status === 'caterer_confirmed') {
       // PDF B with client info and status (not revision)
-      pdf = await orderService.getOrCreateOrderPdfB(id, 'client');
+      pdf = await orderService.getOrCreateOrderPdfB(id, 'client', changedFields, changedItemIds);
     } else if (usePdfA) {
       // PDF A with pricing
-      pdf = await orderService.getOrCreateOrderPdf(id, regenerate);
+      pdf = await orderService.getOrCreateOrderPdf(id, regenerate, changedFields, changedItemIds);
     } else {
       // PDF B (default for other statuses)
-      pdf = await orderService.getOrCreateOrderPdfB(id);
+      pdf = await orderService.getOrCreateOrderPdfB(id, 'caterer', changedFields, changedItemIds);
     }
     
     const download = req.query.download !== 'false';
@@ -1038,10 +1135,23 @@ orderRouter.get('/:id/preview-b', requirePermission('orders.read'), async (req: 
     const host = req.get('X-Forwarded-Host') || req.get('host');
     const logoUrl = `${protocol}://${host}/assets/logo.png`;
     
-    // Pass logo URL to HTML generator
+    // Get changed fields from query parameters (optional - for highlighting changes in PDF)
+    const changedFields = req.query.changed_fields 
+      ? (Array.isArray(req.query.changed_fields) ? req.query.changed_fields : [req.query.changed_fields]).map(String)
+      : [];
+    const changedItemIds = req.query.changed_item_ids
+      ? (Array.isArray(req.query.changed_item_ids) ? req.query.changed_item_ids : [req.query.changed_item_ids]).map(Number).filter(id => !isNaN(id))
+      : [];
+    
+    // Pass logo URL and change tracking to HTML generator
     // For caterer_confirmed status, use 'client' recipient type to show client info and status
     const recipientType = order.status === 'caterer_confirmed' ? 'client' : 'caterer';
-    const orderWithLogo = { ...order, _logoUrl: logoUrl };
+    const orderWithLogo = { 
+      ...order, 
+      _logoUrl: logoUrl,
+      _changedFields: changedFields,
+      _changedItemIds: changedItemIds
+    };
     const html = generateOrderHTMLB(orderWithLogo, recipientType);
     res.json({ html, order_number: order.order_number, order, logoUrl });
   } catch (error: any) {
@@ -1086,9 +1196,29 @@ orderRouter.get('/:id/pdf-b', requirePermission('orders.read'), async (req: Requ
       return res.status(404).json({ error: 'Order not found' });
     }
     
+    // Get changed fields from query parameters (optional - for highlighting changes in PDF)
+    // If not provided, try to detect changes automatically from last sent snapshot
+    let changedFields: string[] = [];
+    let changedItemIds: number[] = [];
+    
+    if (req.query.changed_fields || req.query.changed_item_ids) {
+      // Use provided changes
+      changedFields = req.query.changed_fields 
+        ? (Array.isArray(req.query.changed_fields) ? req.query.changed_fields : [req.query.changed_fields]).map(String)
+        : [];
+      changedItemIds = req.query.changed_item_ids
+        ? (Array.isArray(req.query.changed_item_ids) ? req.query.changed_item_ids : [req.query.changed_item_ids]).map(Number).filter(id => !isNaN(id))
+        : [];
+    } else {
+      // Auto-detect changes from last sent snapshot
+      const changes = orderService.detectChangesFromLastSent(id, order);
+      changedFields = changes.changedFields;
+      changedItemIds = changes.changedItemIds;
+    }
+    
     // For caterer_confirmed status, use 'client' recipient type to show client info and status
     const recipientType = order.status === 'caterer_confirmed' ? 'client' : 'caterer';
-    const pdf = await orderService.getOrCreateOrderPdfB(id, recipientType);
+    const pdf = await orderService.getOrCreateOrderPdfB(id, recipientType, changedFields, changedItemIds);
     
     const download = req.query.download !== 'false';
     const filename = pdf.filename;
@@ -1204,8 +1334,8 @@ orderRouter.post('/:id/send-to-client', requirePermission('orders.read'), async 
     const purpose = req.body.purpose || template.purpose;
     const pdfFormat = req.body.pdf_format || template.pdfFormat;
     
-    // Only ADMIN can send final invoice (when status is paid or purpose is invoice)
-    const isInvoice = order.status === 'paid' || purpose === 'invoice';
+    // Only ADMIN can send final invoice (when is_paid is true or purpose is invoice)
+    const isInvoice = order.is_paid === true || purpose === 'invoice';
     if (isInvoice && req.user!.role !== 'ADMIN') {
       return res.status(403).json({ error: 'Only administrators can send final invoice emails' });
     }
@@ -1231,15 +1361,19 @@ orderRouter.post('/:id/send-to-client', requirePermission('orders.read'), async 
     // Generate HTML email
     const html = emailService.generateEmailHTML(body, order.order_number || '');
 
-      // Get PDF attachment based on format (A = with pricing, B = without pricing)
+      // Get changed fields from request body (optional - for highlighting changes in PDF)
+    const changedFields = req.body.changed_fields || [];
+    const changedItemIds = req.body.changed_item_ids || [];
+    
+    // Get PDF attachment based on format (A = with pricing, B = without pricing)
     // For delivered status, ALWAYS use PDF B (no pricing) with client info in Bill To section
       // For clients, always pass 'client' as recipient type to show status instead of revision
     const attachments = [];
     // Delivered orders always get PDF B with client info (no pricing)
     const usePdfB = order.status === 'delivered' || pdfFormat === 'B';
     const pdfResult = usePdfB
-        ? await orderService.getOrCreateOrderPdfB(id, 'client')
-        : await orderService.getOrCreateOrderPdf(id);
+        ? await orderService.getOrCreateOrderPdfB(id, 'client', changedFields, changedItemIds)
+        : await orderService.getOrCreateOrderPdf(id, false, changedFields, changedItemIds);
       
       attachments.push({
         filename: pdfResult.filename,
@@ -1408,16 +1542,22 @@ orderRouter.post('/:id/send-to-caterer', requirePermission('orders.read'), async
       return res.status(500).json({ error: result.error });
     }
 
+    // Store snapshot of order state when email is sent (for change detection in future PDFs)
+    orderService.storeLastSentSnapshot(order);
+
+    // Increment revision count when sending to caterer
+    // This tracks how many times the order has been edited and sent to the caterer
+    const orderRepository = getOrderRepository();
+    const updatedOrderWithRevision = await orderRepository.incrementRevisionCount(id);
+    if (updatedOrderWithRevision) {
+      order = updatedOrderWithRevision;
+    }
+
     // Update status if requested
     let statusUpdated = false;
     if (req.body.update_status) {
-      const validStatuses = ['awaiting_quote', 'awaiting_client_approval', 'awaiting_caterer', 'caterer_confirmed', 'in_preparation', 'ready_for_delivery', 'delivered', 'paid', 'cancelled', 'order_changed'];
+      const validStatuses = ['awaiting_quote', 'awaiting_client_approval', 'awaiting_caterer', 'caterer_confirmed', 'in_preparation', 'ready_for_delivery', 'delivered', 'cancelled', 'order_changed'];
       if (validStatuses.includes(req.body.update_status)) {
-        // Only ADMIN can set status to 'paid'
-        if (req.body.update_status === 'paid' && req.user!.role !== 'ADMIN') {
-          return res.status(403).json({ error: 'Only administrators can set order status to paid' });
-        }
-        
         const updatedOrder = await orderService.updateOrderStatus(id, { status: req.body.update_status });
         if (updatedOrder) {
           order = updatedOrder;
@@ -1432,6 +1572,7 @@ orderRouter.post('/:id/send-to-caterer', requirePermission('orders.read'), async
       recipient: catererEmail,
       status: order.status,
       statusUpdated,
+      revisionCount: order.revision_count,
       pdfFormat,
       purpose,
     });
@@ -1516,10 +1657,14 @@ orderRouter.post('/:id/send-to-both', requirePermission('orders.read'), async (r
       return res.status(400).json({ error: errors.join('; ') });
     }
 
+    // Get changed fields from request body (optional - for highlighting changes in PDF)
+    const changedFields = req.body.changed_fields || [];
+    const changedItemIds = req.body.changed_item_ids || [];
+    
     // Get both PDF formats
-    const pdfA = await orderService.getOrCreateOrderPdf(id); // With pricing (for client)
-    const pdfBForClient = await orderService.getOrCreateOrderPdfB(id, 'client'); // Without pricing for client (shows status)
-    const pdfBForCaterer = await orderService.getOrCreateOrderPdfB(id, 'caterer'); // Without pricing for caterer (shows revision)
+    const pdfA = await orderService.getOrCreateOrderPdf(id, false, changedFields, changedItemIds); // With pricing (for client)
+    const pdfBForClient = await orderService.getOrCreateOrderPdfB(id, 'client', changedFields, changedItemIds); // Without pricing for client (shows status)
+    const pdfBForCaterer = await orderService.getOrCreateOrderPdfB(id, 'caterer', changedFields, changedItemIds); // Without pricing for caterer (shows revision)
 
     const results: any = {
       client: null,
@@ -1535,7 +1680,7 @@ orderRouter.post('/:id/send-to-both', requirePermission('orders.read'), async (r
       const clientPurpose = req.body.client_purpose || clientTemplate.purpose;
       
       // Only ADMIN can send final invoice
-      const isInvoice = order.status === 'paid' || clientPurpose === 'invoice';
+      const isInvoice = order.is_paid === true || clientPurpose === 'invoice';
       if (isInvoice && req.user!.role !== 'ADMIN') {
         return res.status(403).json({ error: 'Only administrators can send final invoice emails' });
       }
@@ -1640,6 +1785,14 @@ orderRouter.post('/:id/send-to-both', requirePermission('orders.read'), async (r
         pdf_format: 'B',
         purpose: catererPurpose,
       };
+      
+      // Store snapshot when email is sent to caterer
+      orderService.storeLastSentSnapshot(order);
+    }
+
+    // Store snapshot when email is sent to client (if sent)
+    if (results.client?.success) {
+      orderService.storeLastSentSnapshot(order);
     }
 
     Logger.info('Emails sent to both client and caterer', {

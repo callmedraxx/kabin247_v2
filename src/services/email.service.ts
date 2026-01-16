@@ -111,12 +111,12 @@ export function getEmailSubject(
   if (recipient === 'caterer') {
     // Special handling for awaiting_caterer status
     if (status === 'awaiting_caterer') {
-      return `Kabin247 Order#${displayNum}${deliveryPart} / Confirmation Request`;
+      return `Kabin247 Order#${displayNum}${deliveryPart} / Conf Request`;
     }
     
     switch (purpose) {
       case 'quote_request':
-        return `Kabin247 Order#${displayNum}${deliveryPart} / Quote Request- This Order Is Not Live!`;
+        return `Kabin247 Order#${displayNum}${deliveryPart} / Quote Request`;
       case 'order_request':
       case 'confirmation':
         return `Kabin247 Order Request#${displayNum}${deliveryPart}`;
@@ -753,6 +753,194 @@ export class EmailService {
       <p>This email was sent regarding order ${orderNumber}</p>
     </div>
   </div>
+</body>
+</html>
+    `.trim();
+  }
+
+  /**
+   * Generate professional invoice email HTML (similar to Square's format)
+   * This method does NOT escape HTML - the body should be pre-sanitized
+   */
+  generateInvoiceEmailHTML(options: {
+    orderNumber: string;
+    clientName: string;
+    total: number;
+    paymentUrl: string;
+    dueDate?: string;
+    items?: Array<{ name: string; description?: string; price: number }>;
+    deliveryDate?: string;
+    message?: string;
+  }): string {
+    const { orderNumber, clientName, total, paymentUrl, dueDate, items, deliveryDate, message } = options;
+    
+    // Format due date
+    const formattedDueDate = dueDate ? new Date(dueDate).toLocaleDateString('en-US', { 
+      year: 'numeric', month: 'long', day: 'numeric' 
+    }) : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toLocaleDateString('en-US', { 
+      year: 'numeric', month: 'long', day: 'numeric' 
+    });
+
+    // Format delivery date
+    const formattedDeliveryDate = deliveryDate ? new Date(deliveryDate).toLocaleDateString('en-US', { 
+      year: 'numeric', month: 'long', day: 'numeric' 
+    }) : '';
+
+    // Generate items HTML if provided
+    let itemsHTML = '';
+    if (items && items.length > 0) {
+      const itemRows = items.map(item => `
+        <tr>
+          <td style="padding: 12px 0; border-bottom: 1px solid #e9ecef;">
+            <div style="font-weight: 600; color: #2c3e50;">${item.name}</div>
+            ${item.description ? `<div style="font-size: 13px; color: #6c757d; margin-top: 4px;">${item.description}</div>` : ''}
+          </td>
+          <td style="padding: 12px 0; border-bottom: 1px solid #e9ecef; text-align: right; font-weight: 600; color: #2c3e50; white-space: nowrap;">$${item.price.toFixed(2)}</td>
+        </tr>
+      `).join('');
+
+      itemsHTML = `
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color: #f8f9fa; border-radius: 8px;">
+          <tr>
+            <td style="padding: 20px;">
+              <p style="margin: 0 0 15px 0; color: #2c3e50; font-size: 16px; font-weight: 600;">Invoice Summary</p>
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
+                ${itemRows}
+                <tr>
+                  <td style="padding: 15px 0 8px 0; font-size: 14px; color: #6c757d;">Subtotal</td>
+                  <td style="padding: 15px 0 8px 0; text-align: right; font-size: 14px; color: #6c757d;">$${total.toFixed(2)}</td>
+                </tr>
+                <tr>
+                  <td style="padding: 8px 0 0 0; font-size: 16px; font-weight: 700; color: #2c3e50; border-top: 2px solid #dee2e6;">Total Due</td>
+                  <td style="padding: 8px 0 0 0; text-align: right; font-size: 16px; font-weight: 700; color: #2c3e50; border-top: 2px solid #dee2e6;">$${total.toFixed(2)}</td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+        </table>
+      `;
+    }
+
+    return `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Invoice for Order ${orderNumber}</title>
+</head>
+<body style="margin: 0; padding: 0; background-color: #f4f4f4; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color: #f4f4f4;">
+    <tr>
+      <td align="center" style="padding: 40px 20px;">
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width: 600px; background-color: #ffffff; border-radius: 12px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);">
+          <!-- Logo Header -->
+          <tr>
+            <td align="center" style="padding: 40px 40px 20px 40px;">
+              <img src="https://kabin247.com/logo.png" alt="Kabin247" style="max-width: 180px; height: auto;" onerror="this.style.display='none'">
+              <h1 style="margin: 20px 0 5px 0; color: #2c3e50; font-size: 28px; font-weight: 700;">Kabin247</h1>
+              <p style="margin: 0; color: #7f8c8d; font-size: 14px;">Inflight Catering Solutions</p>
+            </td>
+          </tr>
+          
+          <!-- Invoice Title -->
+          <tr>
+            <td align="center" style="padding: 20px 40px;">
+              <p style="margin: 0; color: #6c757d; font-size: 14px; text-transform: uppercase; letter-spacing: 1px;">New Invoice</p>
+              <h2 style="margin: 10px 0 0 0; color: #2c3e50; font-size: 48px; font-weight: 700;">$${total.toFixed(2)}</h2>
+              <p style="margin: 10px 0 0 0; color: #6c757d; font-size: 14px;">Due on ${formattedDueDate}</p>
+            </td>
+          </tr>
+          
+          <!-- Pay Button -->
+          <tr>
+            <td align="center" style="padding: 20px 40px 30px 40px;">
+              <a href="${paymentUrl}" style="display: inline-block; padding: 16px 48px; background-color: #0070f3; color: #ffffff; text-decoration: none; border-radius: 8px; font-size: 16px; font-weight: 600; box-shadow: 0 4px 14px rgba(0, 112, 243, 0.4);">Pay Invoice</a>
+            </td>
+          </tr>
+          
+          <!-- Divider -->
+          <tr>
+            <td style="padding: 0 40px;">
+              <hr style="border: none; border-top: 1px solid #e9ecef; margin: 0;">
+            </td>
+          </tr>
+          
+          <!-- Order Details -->
+          <tr>
+            <td style="padding: 30px 40px;">
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
+                <tr>
+                  <td style="padding-bottom: 20px;">
+                    <p style="margin: 0 0 5px 0; color: #6c757d; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px;">Invoice for Order</p>
+                    <p style="margin: 0; color: #2c3e50; font-size: 16px; font-weight: 600;">${orderNumber}</p>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding-bottom: 20px;">
+                    <p style="margin: 0 0 5px 0; color: #6c757d; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px;">Customer</p>
+                    <p style="margin: 0; color: #2c3e50; font-size: 16px; font-weight: 600;">${clientName}</p>
+                  </td>
+                </tr>
+                ${formattedDeliveryDate ? `
+                <tr>
+                  <td style="padding-bottom: 20px;">
+                    <p style="margin: 0 0 5px 0; color: #6c757d; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px;">Date of Service</p>
+                    <p style="margin: 0; color: #2c3e50; font-size: 16px; font-weight: 600;">${formattedDeliveryDate}</p>
+                  </td>
+                </tr>
+                ` : ''}
+                ${message ? `
+                <tr>
+                  <td style="padding-bottom: 20px;">
+                    <p style="margin: 0 0 5px 0; color: #6c757d; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px;">Message</p>
+                    <p style="margin: 0; color: #2c3e50; font-size: 14px;">${message}</p>
+                  </td>
+                </tr>
+                ` : ''}
+              </table>
+            </td>
+          </tr>
+          
+          ${itemsHTML ? `
+          <!-- Items Summary -->
+          <tr>
+            <td style="padding: 0 40px 30px 40px;">
+              ${itemsHTML}
+            </td>
+          </tr>
+          ` : ''}
+          
+          <!-- Footer -->
+          <tr>
+            <td style="padding: 30px 40px; background-color: #f8f9fa; border-radius: 0 0 12px 12px;">
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
+                <tr>
+                  <td align="center">
+                    <p style="margin: 0 0 5px 0; color: #2c3e50; font-size: 14px; font-weight: 600;">Kabin247</p>
+                    <p style="margin: 0 0 5px 0; color: #6c757d; font-size: 13px;">
+                      <a href="mailto:Accounting@kabin247.com" style="color: #0070f3; text-decoration: none;">Accounting@kabin247.com</a>
+                    </p>
+                    <p style="margin: 0 0 15px 0; color: #6c757d; font-size: 13px;">(813) 331-5667</p>
+                    <p style="margin: 0; color: #adb5bd; font-size: 11px;">Please contact Kabin247 about its privacy practices.</p>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+        </table>
+        
+        <!-- Copyright -->
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width: 600px;">
+          <tr>
+            <td align="center" style="padding: 20px;">
+              <p style="margin: 0; color: #adb5bd; font-size: 11px;">© ${new Date().getFullYear()} Kabin247. All rights reserved.</p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
 </body>
 </html>
     `.trim();

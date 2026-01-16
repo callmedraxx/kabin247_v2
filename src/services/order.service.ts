@@ -11,6 +11,10 @@ export class OrderService {
   private airportRepository = getAirportRepository();
   private menuItemRepository = getMenuItemRepository();
   private fboRepository = getFBORepository();
+  
+  // In-memory cache for order snapshots before updates (for change detection)
+  // Key: orderId, Value: order snapshot before the last update
+  private preUpdateSnapshots = new Map<number, Order>();
 
   /**
    * Resolve prices for order items based on caterer-specific pricing
@@ -251,6 +255,9 @@ export class OrderService {
       return null;
     }
     
+    // Store snapshot of order BEFORE update (for change detection in PDFs)
+    this.storePreUpdateSnapshot(existingOrder);
+    
     // Determine the caterer_id to use for price resolution
     const catererIdForPricing = normalized.caterer_id !== undefined 
       ? normalized.caterer_id 
@@ -333,6 +340,147 @@ export class OrderService {
     return updatedOrder;
   }
 
+  /**
+   * Detect changes between previous and current order states
+   * Returns array of changed field names for PDF highlighting
+   */
+  detectOrderChanges(previousOrder: Order, currentOrder: Order): string[] {
+    const changes: string[] = [];
+    const changedItemIds: number[] = [];
+
+    // Check aircraft tail number
+    if (previousOrder.aircraft_tail_number !== currentOrder.aircraft_tail_number) {
+      changes.push('aircraft_tail_number');
+    }
+
+    // Check airport (compare both airport_id and airport string)
+    if (previousOrder.airport_id !== currentOrder.airport_id ||
+        previousOrder.airport !== currentOrder.airport) {
+      changes.push('airport');
+    }
+
+    // Check FBO
+    if (previousOrder.fbo_id !== currentOrder.fbo_id) {
+      changes.push('fbo');
+    }
+
+    // Check delivery date
+    if (previousOrder.delivery_date !== currentOrder.delivery_date) {
+      changes.push('delivery_date');
+    }
+
+    // Check delivery time
+    if (previousOrder.delivery_time !== currentOrder.delivery_time) {
+      changes.push('delivery_time');
+    }
+
+    // Check dietary restrictions
+    if (previousOrder.dietary_restrictions !== currentOrder.dietary_restrictions) {
+      changes.push('dietary_restrictions');
+    }
+
+    // Check items - compare by ID, name, description, quantity, and packaging
+    const prevItems = previousOrder.items || [];
+    const currItems = currentOrder.items || [];
+    
+    // Create maps for easier comparison
+    const prevItemMap = new Map(prevItems.map(item => [item.id || item.item_name, item]));
+    const currItemMap = new Map(currItems.map(item => [item.id || item.item_name, item]));
+
+    // Check for changed or new items
+    for (const [key, currItem] of currItemMap.entries()) {
+      const prevItem = prevItemMap.get(key);
+      
+      if (!prevItem) {
+        // New item
+        if (currItem.id) changedItemIds.push(currItem.id);
+        changes.push('items');
+      } else {
+        // Check if item properties changed
+        if (prevItem.item_name !== currItem.item_name ||
+            prevItem.item_description !== currItem.item_description ||
+            prevItem.portion_size !== currItem.portion_size ||
+            prevItem.packaging !== currItem.packaging) {
+          if (currItem.id) changedItemIds.push(currItem.id);
+          changes.push('items');
+        }
+      }
+    }
+
+    // Check for removed items
+    for (const [key, prevItem] of prevItemMap.entries()) {
+      if (!currItemMap.has(key)) {
+        changes.push('items');
+      }
+    }
+
+    // Store changed item IDs in current order for PDF generation
+    if (changedItemIds.length > 0) {
+      (currentOrder as any)._changedItemIds = changedItemIds;
+    }
+
+    return changes;
+  }
+
+  /**
+   * Store a snapshot of the order BEFORE an update is made
+   * This snapshot is used to detect changes for highlighting in PDFs
+   */
+  storePreUpdateSnapshot(order: Order): void {
+    if (order.id) {
+      // Create a deep copy of the order for snapshot
+      const snapshot: Order = {
+        ...order,
+        items: order.items ? order.items.map(item => ({ ...item })) : [],
+      };
+      this.preUpdateSnapshots.set(order.id, snapshot);
+    }
+  }
+
+  /**
+   * Get the pre-update snapshot for an order
+   */
+  getPreUpdateSnapshot(orderId: number): Order | null {
+    return this.preUpdateSnapshots.get(orderId) || null;
+  }
+
+  /**
+   * Clear the pre-update snapshot for an order (e.g., after email is sent)
+   */
+  clearPreUpdateSnapshot(orderId: number): void {
+    this.preUpdateSnapshots.delete(orderId);
+  }
+
+  /**
+   * Store a snapshot when email is sent (same as pre-update snapshot)
+   * Keeping this for backwards compatibility
+   */
+  storeLastSentSnapshot(order: Order): void {
+    // When email is sent, we clear the pre-update snapshot
+    // because the "changes" have now been communicated
+    if (order.id) {
+      this.clearPreUpdateSnapshot(order.id);
+    }
+  }
+
+  /**
+   * Detect changes by comparing current order with pre-update snapshot
+   * Returns change tracking data for PDF highlighting
+   */
+  detectChangesFromLastSent(orderId: number, currentOrder: Order): { changedFields: string[]; changedItemIds: number[] } {
+    const preUpdate = this.getPreUpdateSnapshot(orderId);
+    
+    if (!preUpdate) {
+      // No previous snapshot, no changes to highlight
+      return { changedFields: [], changedItemIds: [] };
+    }
+
+    const changedFields = this.detectOrderChanges(preUpdate, currentOrder);
+    const changedItemIds = (currentOrder as any)._changedItemIds || [];
+    
+    return { changedFields, changedItemIds };
+  }
+
   async updateOrderStatus(id: number, statusData: OrderStatusUpdateDTO): Promise<Order | null> {
     const validation = validateOrder(statusData);
     if (!validation.valid) {
@@ -381,10 +529,16 @@ export class OrderService {
     return this.repository.findAll(params);
   }
 
-  async getOrCreateOrderPdf(orderId: number, regenerate: boolean = false): Promise<{ buffer: Buffer; filename: string; mimeType: string; order: Order }> {
+  async getOrCreateOrderPdf(orderId: number, regenerate: boolean = false, changedFields?: string[], changedItemIds?: number[]): Promise<{ buffer: Buffer; filename: string; mimeType: string; order: Order }> {
     const order = await this.repository.findById(orderId);
     if (!order) {
       throw new Error('Order not found');
+    }
+    
+    // Attach change tracking to order for PDF generation
+    if (changedFields || changedItemIds) {
+      (order as any)._changedFields = changedFields || [];
+      (order as any)._changedItemIds = changedItemIds || [];
     }
 
     const filename = `order_${order.order_number}.pdf`;
@@ -402,10 +556,16 @@ export class OrderService {
     const forceRegenerateStatuses = ['delivered', 'caterer_confirmed'];
     const shouldForceRegenerate = forceRegenerateStatuses.includes(order.status);
 
+    // Always regenerate if order is paid to ensure PAID stamp is included
+    // This handles cases where cached PDFs were generated before is_paid was set
+    const shouldRegenerateForPaid = order.is_paid === true;
+
     // For delivered status, ALWAYS regenerate to ensure PDF A format (never use cached PDF B)
     // For caterer_confirmed, also always regenerate to ensure correct format
-    if (order.status === 'delivered') {
+    // For paid orders, always regenerate to ensure PAID stamp is included
+    if (order.status === 'delivered' || shouldRegenerateForPaid) {
       // Delivered status MUST use PDF A - never use cache as it might be old PDF B
+      // Paid orders MUST regenerate to ensure PAID stamp is included
       // Always regenerate to ensure correct format
     } else if (!regenerate && !shouldForceRegenerate) {
       const existing = await this.repository.getPdf(orderId);
@@ -443,7 +603,7 @@ export class OrderService {
       }
     }
 
-    // Generate and store
+    // Generate and store (changes are already attached to order object)
     const pdfBuffer = await generateOrderPDFBuffer(order);
     await this.repository.savePdf(orderId, pdfBuffer, filename, mimeType);
 
@@ -455,10 +615,16 @@ export class OrderService {
     };
   }
 
-  async getOrCreateOrderPdfB(orderId: number, recipientType: 'client' | 'caterer' = 'caterer'): Promise<{ buffer: Buffer; filename: string; mimeType: string; order: Order }> {
+  async getOrCreateOrderPdfB(orderId: number, recipientType: 'client' | 'caterer' = 'caterer', changedFields?: string[], changedItemIds?: number[]): Promise<{ buffer: Buffer; filename: string; mimeType: string; order: Order }> {
     const order = await this.repository.findById(orderId);
     if (!order) {
       throw new Error('Order not found');
+    }
+    
+    // Attach change tracking to order for PDF generation
+    if (changedFields || changedItemIds) {
+      (order as any)._changedFields = changedFields || [];
+      (order as any)._changedItemIds = changedItemIds || [];
     }
 
     // PDF B is always generated fresh (not cached) as it's typically for vendor/caterer
@@ -467,7 +633,7 @@ export class OrderService {
       : `order_${order.order_number}_vendor.pdf`;
     const mimeType = 'application/pdf';
 
-    // Generate PDF B (no pricing, grouped by category)
+    // Generate PDF B (no pricing, grouped by category) - changes are already attached to order object
     const pdfBuffer = await generateOrderPDFBBuffer(order, recipientType);
 
     return {

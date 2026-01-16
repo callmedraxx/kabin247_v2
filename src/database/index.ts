@@ -176,7 +176,8 @@ async function createOrdersTable(): Promise<void> {
       delivery_time VARCHAR(10) NOT NULL,
       order_priority VARCHAR(20) NOT NULL CHECK (order_priority IN ('low', 'normal', 'high', 'urgent')),
       payment_method VARCHAR(20) NOT NULL CHECK (payment_method IN ('card', 'ACH')),
-      status VARCHAR(50) NOT NULL DEFAULT 'awaiting_quote' CHECK (status IN ('awaiting_quote', 'awaiting_client_approval', 'awaiting_caterer', 'caterer_confirmed', 'in_preparation', 'ready_for_delivery', 'delivered', 'paid', 'cancelled', 'order_changed')),
+      status VARCHAR(50) NOT NULL DEFAULT 'awaiting_quote' CHECK (status IN ('awaiting_quote', 'awaiting_client_approval', 'awaiting_caterer', 'caterer_confirmed', 'in_preparation', 'ready_for_delivery', 'delivered', 'cancelled', 'order_changed')),
+      is_paid BOOLEAN DEFAULT FALSE,
       order_type VARCHAR(50) NOT NULL CHECK (order_type IN ('Inflight order', 'QE Serv Hub Order', 'Restaurant Pickup Order')),
       description TEXT,
       notes TEXT,
@@ -283,15 +284,28 @@ async function createOrdersTable(): Promise<void> {
     console.error('Error altering orders/order_items tables:', error);
   }
 
-  // Update status constraint for existing databases to include new statuses
+  // Add is_paid column and migrate existing paid orders
   try {
+    // Add is_paid column if it doesn't exist
+    await dbAdapter!.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS is_paid BOOLEAN DEFAULT FALSE;`);
+    console.log('is_paid column added to orders');
+    
+    // Migrate existing orders with status='paid' to status='delivered' and is_paid=true
+    await dbAdapter!.query(`
+      UPDATE orders 
+      SET status = 'delivered', is_paid = true 
+      WHERE status = 'paid' AND (is_paid IS NULL OR is_paid = false);
+    `);
+    console.log('Migrated existing paid orders to delivered + is_paid=true');
+    
+    // Update status constraint to remove 'paid' status
     await dbAdapter!.query(`
       ALTER TABLE orders DROP CONSTRAINT IF EXISTS orders_status_check;
-      ALTER TABLE orders ADD CONSTRAINT orders_status_check CHECK (status IN ('awaiting_quote', 'awaiting_client_approval', 'awaiting_caterer', 'caterer_confirmed', 'in_preparation', 'ready_for_delivery', 'delivered', 'paid', 'cancelled', 'order_changed'));
+      ALTER TABLE orders ADD CONSTRAINT orders_status_check CHECK (status IN ('awaiting_quote', 'awaiting_client_approval', 'awaiting_caterer', 'caterer_confirmed', 'in_preparation', 'ready_for_delivery', 'delivered', 'cancelled', 'order_changed'));
     `);
-    console.log('Status constraint updated successfully');
+    console.log('Status constraint updated - removed paid status');
   } catch (error) {
-    console.error('Error updating status constraint:', error);
+    console.error('Error migrating payment status:', error);
   }
 
   // Add revision_count column to orders for existing databases

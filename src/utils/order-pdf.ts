@@ -171,6 +171,20 @@ export function generateOrderHTML(order: any): string {
   const statusColor = statusColors[order.status] || c.secondary;
   const statusBg = statusBackgrounds[order.status] || c.background;
   
+  // Get changed fields for highlighting
+  const changedFields = order._changedFields || [];
+  const changedItemIds = order._changedItemIds || [];
+  const changeColor = '#f97316'; // Orange color for changes
+  const unchangedItemColor = '#3b82f6'; // Blue color for unchanged items (when there are changes)
+  const hasAnyChanges = changedFields.length > 0 || changedItemIds.length > 0;
+  
+  // Helper function to check if a field is changed
+  const isChanged = (fieldName: string) => changedFields.includes(fieldName);
+  
+  // Helper function to get text color based on change status
+  const getTextColor = (fieldName: string, defaultColor: string) => 
+    isChanged(fieldName) ? changeColor : defaultColor;
+  
   // Calculate correct subtotal from items (price * qty for each item)
   const calculatedSubtotal = (order.items || []).reduce((sum: number, item: any) => {
     const qty = parseFloat(item.portion_size) || 1;
@@ -205,22 +219,36 @@ export function generateOrderHTML(order: any): string {
   const fboName = decodeHtmlEntitiesForText(order.fbo?.fbo_name || '');
   const dietary = decodeHtmlEntitiesForText(order.dietary_restrictions || '');
   
+  // Helper to check if item is changed
+  const isItemChanged = (item: any) => {
+    if (!item.id) return false;
+    return changedItemIds.includes(item.id) || isChanged('items');
+  };
+  
   const itemsHTML = (order.items || []).map((item: any, i: number) => {
     // Pale blue shading for alternating rows, or clean black line
     const bg = i % 2 === 0 ? '#fff' : '#f0f9ff';
     const borderColor = i % 2 === 0 ? '#e5e7eb' : '#e5e7eb';
+    const itemChanged = isItemChanged(item);
+    // When there are changes: changed items = orange, unchanged items = blue
+    // When no changes: use default colors
+    const itemNameColor = itemChanged ? changeColor : (hasAnyChanges ? unchangedItemColor : c.primary);
+    const itemDescColor = itemChanged ? changeColor : (hasAnyChanges ? unchangedItemColor : c.textLight);
+    const itemQtyColor = itemChanged ? changeColor : (hasAnyChanges ? unchangedItemColor : c.text);
+    const itemPackagingColor = itemChanged ? changeColor : (hasAnyChanges ? unchangedItemColor : '#0369a1');
+    
     // Preserve newlines in description by converting to <br/> tags
     const descText = item.item_description ? escapeHtml(item.item_description).replace(/\n/g, '<br/>') : '';
-    const desc = descText ? `<div style="font-family:'Times New Roman',Times,serif;font-size:11px;color:${c.textLight};margin-top:2px;line-height:1.3">${descText}</div>` : '';
-    const packagingTag = item.packaging ? `<div style="font-family:'Times New Roman',Times,serif;font-size:11px;font-weight:bold;color:#0369a1;margin-top:2px">${escapeHtml(item.packaging)}</div>` : '';
+    const desc = descText ? `<div style="font-family:'Times New Roman',Times,serif;font-size:11px;color:${itemDescColor};margin-top:2px;line-height:1.3">${descText}</div>` : '';
+    const packagingTag = item.packaging ? `<div style="font-family:'Times New Roman',Times,serif;font-size:11px;font-weight:bold;color:${itemPackagingColor};margin-top:2px">${escapeHtml(item.packaging)}</div>` : '';
     const qty = parseFloat(item.portion_size) || 1;
     return `<tr style="background:${bg}">
       <td style="padding:6px 12px;border-bottom:1px solid ${borderColor};width:54%">
-        <div style="font-family:'Times New Roman',Times,serif;font-size:14px;font-weight:600;color:${c.primary}">${escapeHtml(item.item_name)}</div>
+        <div style="font-family:'Times New Roman',Times,serif;font-size:14px;font-weight:600;color:${itemNameColor}">${escapeHtml(item.item_name)}</div>
         ${desc}
         ${packagingTag}
       </td>
-      <td style="padding:6px 4px;text-align:center;border-bottom:1px solid ${borderColor};width:10%;font-family:'Times New Roman',Times,serif;font-size:11px">${escapeHtml(item.portion_size)}</td>
+      <td style="padding:6px 4px;text-align:center;border-bottom:1px solid ${borderColor};width:10%;font-family:'Times New Roman',Times,serif;font-size:11px;color:${itemQtyColor}">${escapeHtml(item.portion_size)}</td>
       <td style="padding:6px 4px;text-align:right;border-bottom:1px solid ${borderColor};width:18%;font-family:'Times New Roman',Times,serif;font-size:11px;color:${c.textLight}">$${formatPrice(item.price)}</td>
       <td style="padding:6px 4px;text-align:right;border-bottom:1px solid ${borderColor};width:18%;font-family:'Times New Roman',Times,serif;font-size:11px;font-weight:600">$${formatPrice(item.price * qty)}</td>
     </tr>`;
@@ -230,14 +258,14 @@ export function generateOrderHTML(order: any): string {
   const logoUrl = order._logoUrl || '/assets/logo.png';
   const logoImg = `<img src="${escapeHtml(logoUrl)}" style="height:100px;margin-bottom:6px" alt="${escapeHtml(s.company.name)}" onerror="this.style.display='none';this.nextElementSibling.style.display='block'"/><div style="display:none;font-size:20px;font-weight:700;color:${c.primary};margin-bottom:6px">${escapeHtml(s.company.name)}</div>`;
 
-  // Add PAID stamp if status is paid
-  const paidStamp = order.status === 'paid' ? `<div style="position:fixed;top:50%;left:50%;transform:translate(-50%,-50%) rotate(-45deg);font-size:120px;font-weight:900;color:rgba(16,185,129,0.15);z-index:1000;pointer-events:none;font-family:'Times New Roman',Times,serif;letter-spacing:20px">PAID</div>` : '';
+  // Add PAID stamp if is_paid is true
+  const paidStamp = order.is_paid === true ? `<div style="position:fixed;top:50%;left:50%;transform:translate(-50%,-50%) rotate(-45deg);font-size:120px;font-weight:900;color:rgba(16,185,129,0.15);z-index:1000;pointer-events:none;font-family:'Times New Roman',Times,serif;letter-spacing:20px">PAID</div>` : '';
 
   return `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Invoice #${displayNum}</title>
 <style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;background:#f1f5f9;padding:12px;color:${c.text}}.inv{max-width:800px;margin:0 auto;background:#fff;box-shadow:0 4px 6px -1px rgba(0,0,0,.1);border-radius:8px;overflow:hidden}.hdr{display:flex;justify-content:space-between;align-items:flex-start;padding:16px 28px;border-bottom:1px solid ${c.borderLight}}.co-info{font-size:11px;color:${c.textLight};line-height:1.4}.inv-num{font-size:18px;font-weight:700;color:${c.primary};margin-bottom:2px}.inv-sub{font-size:11px;color:${c.textLight};text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px}.badge{display:inline-block;padding:4px 12px;border-radius:16px;font-size:11px;font-weight:600;background:${statusBg};color:${statusColor}}.det{display:grid;grid-template-columns:1fr 1fr;gap:24px;padding:16px 28px;background:${c.background}}.det h3{font-size:10px;text-transform:uppercase;letter-spacing:1px;color:${c.textMuted};margin-bottom:10px;font-weight:600}.det-row{display:flex;margin-bottom:6px;font-size:12px}.det-lbl{width:90px;color:${c.textLight}}.det-val{font-weight:500}.bt-name{font-size:14px;font-weight:600;margin-bottom:4px}.bt-co{font-size:12px;color:${c.primary};font-weight:500;margin-bottom:4px}.bt-det{font-size:11px;color:${c.textLight};line-height:1.5}.items{padding:16px 28px}table{width:100%;border-collapse:separate;border-spacing:0;border-radius:6px;overflow:hidden;border:1px solid ${c.border}}thead th{background:${c.primaryDark};color:#fff;padding:8px 12px;font-family:'Times New Roman',Times,serif;font-size:11px;font-weight:bold;text-transform:uppercase;letter-spacing:.5px;text-align:left}thead th:nth-child(2),thead th:nth-child(3){text-align:center}thead th:last-child{text-align:right}.tots{padding:0 28px 16px;display:flex;justify-content:flex-end}.tots-box{width:260px;background:${c.background};border-radius:6px;padding:14px;border:1px solid ${c.borderLight}}.tot-row{display:flex;justify-content:space-between;padding:5px 0;font-size:12px;color:${c.textLight}}.tot-row.grand{border-top:2px solid ${c.border};margin-top:6px;padding-top:10px;font-size:14px;font-weight:700;color:${c.primary}}.ftr{padding:14px 28px;background:${c.background};border-top:1px solid ${c.borderLight};text-align:center}.ftr-msg{font-size:11px;color:${c.textLight};line-height:1.6}.ftr-sig{font-size:12px;font-weight:600;color:${c.primary};margin-bottom:4px}.ftr-tag{font-size:11px;color:${c.textMuted};font-style:italic}.inst{padding:0 28px 16px}.inst-box{background:#fffbeb;border:1px solid #fcd34d;border-radius:6px;padding:12px}.inst-box h4{color:#b45309;font-size:11px;font-weight:600;margin-bottom:8px}.inst-item{font-size:11px;color:#78350f;margin-bottom:4px}</style></head>
 <body><div class="inv">
 <div class="hdr"><div>${logoImg}<div class="co-info">${escapeHtml(s.company.address)}<br/><b>Phone | ${escapeHtml(s.company.phone)}</b></div></div><div style="text-align:right"><div class="inv-num">INVOICE #${escapeHtml(displayNum)}</div><div class="inv-sub">Inflight Catering Order</div><span class="badge">${escapeHtml(statusLabel)}</span></div></div>
-<div class="det"><div><h3>Bill To</h3><div class="bt-name">${escapeHtml(clientName)}</div>${clientCompany ? `<div class="bt-co">${escapeHtml(clientCompany)}</div>` : ''}<div class="bt-det" style="word-wrap:break-word;overflow-wrap:break-word;max-width:250px">${clientAddr ? escapeHtml(clientAddr).replace(/\n/g, '<br/>') + '<br/>' : ''}${clientEmail ? `<div style="margin-top:4px">${escapeHtml(clientEmail)}</div>` : ''}${clientPhone ? `<div>${escapeHtml(clientPhone)}</div>` : ''}</div></div><div><h3>Delivery Details</h3><div class="det-row"><span class="det-lbl">Date & Time:</span><span class="det-val">${escapeHtml(formatDate(order.delivery_date))} &nbsp; ${escapeHtml(formatTime(order.delivery_time))}</span></div><div class="det-row"><span class="det-lbl">Airport Code:</span><span class="det-val">${escapeHtml(airportCode)}</span></div><div class="det-row"><span class="det-lbl">FBO:</span><span class="det-val">${escapeHtml(fboName)}</span></div><div class="det-row"><span class="det-lbl">Tail#:</span><span class="det-val">${escapeHtml(order.aircraft_tail_number||'')}</span></div>${dietary?`<div class="det-row"><span class="det-lbl">Dietary:</span><span class="det-val">${escapeHtml(dietary)}</span></div>`:''}</div></div>
+<div class="det"><div><h3>Bill To</h3><div class="bt-name">${escapeHtml(clientName)}</div>${clientCompany ? `<div class="bt-co">${escapeHtml(clientCompany)}</div>` : ''}<div class="bt-det" style="word-wrap:break-word;overflow-wrap:break-word;max-width:250px">${clientAddr ? escapeHtml(clientAddr).replace(/\n/g, '<br/>') + '<br/>' : ''}${clientEmail ? `<div style="margin-top:4px">${escapeHtml(clientEmail)}</div>` : ''}${clientPhone ? `<div>${escapeHtml(clientPhone)}</div>` : ''}</div></div><div><h3>Delivery Details</h3><div class="det-row"><span class="det-lbl">Date & Time:</span><span class="det-val" style="color:${getTextColor('delivery_date', c.text)}">${escapeHtml(formatDate(order.delivery_date))} &nbsp; <span style="color:${getTextColor('delivery_time', c.text)}">${escapeHtml(formatTime(order.delivery_time))}</span></span></div><div class="det-row"><span class="det-lbl">Airport Code:</span><span class="det-val" style="color:${getTextColor('airport', c.text)}">${escapeHtml(airportCode)}</span></div><div class="det-row"><span class="det-lbl">FBO:</span><span class="det-val" style="color:${getTextColor('fbo', c.text)}">${escapeHtml(fboName)}</span></div><div class="det-row"><span class="det-lbl">Tail#:</span><span class="det-val" style="color:${getTextColor('aircraft_tail_number', c.text)}">${escapeHtml(order.aircraft_tail_number||'')}</span></div>${dietary?`<div class="det-row"><span class="det-lbl">Dietary:</span><span class="det-val" style="color:${getTextColor('dietary_restrictions', c.text)}">${escapeHtml(dietary)}</span></div>`:''}</div></div>
 ${(order.reheating_instructions||order.packaging_instructions)?`<div class="inst"><div class="inst-box"><h4>⚠️ Special Instructions</h4>${order.reheating_instructions?`<div class="inst-item"><b>Reheating:</b> ${escapeHtml(order.reheating_instructions)}</div>`:''}${order.packaging_instructions?`<div class="inst-item"><b>Packaging:</b> ${escapeHtml(order.packaging_instructions)}</div>`:''}</div></div>`:''}
 <div class="items"><table><thead><tr><th style="font-size:12px">Item & Description</th><th style="text-align:center;font-size:10px">Qty</th><th style="text-align:right;font-size:10px">Unit Cost</th><th style="text-align:right;font-size:10px">Total</th></tr></thead><tbody>${itemsHTML}</tbody></table></div>
 <div class="tots"><div class="tots-box"><div class="tot-row"><span>Subtotal:</span><span>$${formatPrice(calculatedSubtotal)}</span></div>${parseFloat(order.delivery_fee || 0)>0?`<div class="tot-row"><span>${escapeHtml(airportCode)} Delivery Fee:</span><span>$${formatPrice(order.delivery_fee)}</span></div>`:''}${parseFloat(order.service_charge || 0)>0?`<div class="tot-row"><span>Service Charge:</span><span>$${formatPrice(order.service_charge)}</span></div>`:''}${parseFloat(order.coordination_fee || 0)>0?`<div class="tot-row"><span>Coordination Fee:</span><span>$${formatPrice(order.coordination_fee)}</span></div>`:''}${parseFloat(order.airport_fee || 0)>0?`<div class="tot-row"><span>Airport Fee:</span><span>$${formatPrice(order.airport_fee)}</span></div>`:''}${parseFloat(order.fbo_fee || 0)>0?`<div class="tot-row"><span>FBO Fee:</span><span>$${formatPrice(order.fbo_fee)}</span></div>`:''}${parseFloat(order.shopping_fee || 0)>0?`<div class="tot-row"><span>Shopping Fee:</span><span>$${formatPrice(order.shopping_fee)}</span></div>`:''}${parseFloat(order.restaurant_pickup_fee || 0)>0?`<div class="tot-row"><span>Restaurant Pickup Fee:</span><span>$${formatPrice(order.restaurant_pickup_fee)}</span></div>`:''}${parseFloat(order.airport_pickup_fee || 0)>0?`<div class="tot-row"><span>Airport Pickup Fee:</span><span>$${formatPrice(order.airport_pickup_fee)}</span></div>`:''}<div class="tot-row grand"><span>Total:</span><span>$${formatPrice(calculatedTotal)}</span></div></div></div>
@@ -452,8 +480,8 @@ export function generateOrderPDF(order: any, styles: PDFStyleConfig = defaultPDF
   doc.moveTo(m, fy).lineTo(pw - m, fy).strokeColor(c.borderLight).lineWidth(1).stroke();
   doc.fillColor(c.textLight).fontSize(12).font(styles.fonts.body).text('Email: Inflight@Kabin247.com   Phone: +1-813-331-5667  Address: 4520 W. Oakellar Ave, Unit 13061, Tampa, FL 33611', m, fy + 12, { width: cw, align: 'center' });
 
-  // Add PAID stamp if status is paid (diagonal watermark)
-  if (order.status === 'paid') {
+  // Add PAID stamp if is_paid is true (diagonal watermark)
+  if (order.is_paid === true) {
     const centerX = pw / 2;
     const centerY = styles.layout.pageHeight / 2;
     const stampText = 'PAID';
@@ -580,6 +608,20 @@ export function generateOrderHTMLB(order: any, recipientType: 'client' | 'catere
   const statusColor = statusColors[order.status] || c.secondary;
   const statusBg = statusBackgrounds[order.status] || c.background;
   
+  // Get changed fields for highlighting
+  const changedFields = order._changedFields || [];
+  const changedItemIds = order._changedItemIds || [];
+  const changeColor = '#f97316'; // Orange color for changes
+  const unchangedItemColor = '#3b82f6'; // Blue color for unchanged items (when there are changes)
+  const hasAnyChanges = changedFields.length > 0 || changedItemIds.length > 0;
+  
+  // Helper function to check if a field is changed
+  const isChanged = (fieldName: string) => changedFields.includes(fieldName);
+  
+  // Helper function to get text color based on change status
+  const getTextColor = (fieldName: string, defaultColor: string) => 
+    isChanged(fieldName) ? changeColor : defaultColor;
+  
   // Check if this PDF is for a caterer (when status is awaiting_quote or awaiting_caterer, or explicitly set)
   // Exception: caterer_confirmed status with client recipient should use client info and show status
   // Explicitly check: if caterer_confirmed with client recipient, use client info (isForCaterer = false)
@@ -653,14 +695,28 @@ export function generateOrderHTMLB(order: any, recipientType: 'client' | 'catere
   const dietary = decodeHtmlEntitiesForText(order.dietary_restrictions || '');
   const packagingInst = decodeHtmlEntitiesForText(order.packaging_instructions || '');
   
+  // Helper to check if item is changed
+  const isItemChanged = (item: any) => {
+    if (!item.id) return false;
+    return changedItemIds.includes(item.id) || isChanged('items');
+  };
+  
   // Generate items HTML (no category grouping)
   const itemsHTML = (order.items || []).map((item: any, i: number) => {
     // Pale blue shading for alternating rows, or clean black line
     const bg = i % 2 === 0 ? '#fff' : '#f0f9ff';
     const borderColor = i % 2 === 0 ? '#e5e7eb' : '#e5e7eb';
+    const itemChanged = isItemChanged(item);
+    // When there are changes: changed items = orange, unchanged items = blue
+    // When no changes: use default colors
+    const itemNameColor = itemChanged ? changeColor : (hasAnyChanges ? unchangedItemColor : c.primary);
+    const itemDescColor = itemChanged ? changeColor : (hasAnyChanges ? unchangedItemColor : c.textLight);
+    const itemQtyColor = itemChanged ? changeColor : (hasAnyChanges ? unchangedItemColor : c.text);
+    const itemPackagingColor = itemChanged ? changeColor : (hasAnyChanges ? unchangedItemColor : c.text);
+    
     // Preserve newlines in description by converting to <br/> tags
     const descText = item.item_description ? escapeHtml(item.item_description).replace(/\n/g, '<br/>') : '';
-    const desc = descText ? `<div style="font-family:'Times New Roman',Times,serif;font-size:11px;color:${c.textLight};margin-top:2px;line-height:1.3">${descText}</div>` : '';
+    const desc = descText ? `<div style="font-family:'Times New Roman',Times,serif;font-size:11px;color:${itemDescColor};margin-top:2px;line-height:1.3">${descText}</div>` : '';
     // portion_serving is the size (can be "200ml", "500mg", etc.), portion_size is the quantity (purely number)
     // If portion_serving is "No#" or empty, fall back to portion_size
     const portionSize = (item.portion_serving && item.portion_serving !== 'No#') ? item.portion_serving : (item.portion_size || '');
@@ -669,12 +725,12 @@ export function generateOrderHTMLB(order: any, recipientType: 'client' | 'catere
     // Note: packaging is only shown in the dedicated Packaging Preference column, not in the description
     return `<tr style="background:${bg}">
       <td style="padding:6px 12px;border-bottom:1px solid ${borderColor};width:58%">
-        <div style="font-family:'Times New Roman',Times,serif;font-size:14px;font-weight:600;color:${c.primary}">${escapeHtml(item.item_name)}</div>
+        <div style="font-family:'Times New Roman',Times,serif;font-size:14px;font-weight:600;color:${itemNameColor}">${escapeHtml(item.item_name)}</div>
         ${desc}
       </td>
-      <td style="padding:6px 4px;text-align:center;border-bottom:1px solid ${borderColor};width:10%;font-family:'Times New Roman',Times,serif;font-size:11px">${escapeHtml(portionSize)}</td>
-      <td style="padding:6px 4px;text-align:center;border-bottom:1px solid ${borderColor};width:10%;font-family:'Times New Roman',Times,serif;font-size:11px">${escapeHtml(quantity)}</td>
-      <td style="padding:6px 4px;text-align:center;border-bottom:1px solid ${borderColor};width:22%;font-family:'Times New Roman',Times,serif;font-size:11px;font-weight:bold">${escapeHtml(item.packaging || '')}</td>
+      <td style="padding:6px 4px;text-align:center;border-bottom:1px solid ${borderColor};width:10%;font-family:'Times New Roman',Times,serif;font-size:11px;color:${itemQtyColor}">${escapeHtml(portionSize)}</td>
+      <td style="padding:6px 4px;text-align:center;border-bottom:1px solid ${borderColor};width:10%;font-family:'Times New Roman',Times,serif;font-size:11px;color:${itemQtyColor}">${escapeHtml(quantity)}</td>
+      <td style="padding:6px 4px;text-align:center;border-bottom:1px solid ${borderColor};width:22%;font-family:'Times New Roman',Times,serif;font-size:11px;font-weight:bold;color:${itemPackagingColor}">${escapeHtml(item.packaging || '')}</td>
     </tr>`;
   }).join('');
 
@@ -714,14 +770,14 @@ export function generateOrderHTMLB(order: any, recipientType: 'client' | 'catere
   </div>
   <div>
     <h3>Delivery Details</h3>
-    <div class="det-row"><span class="det-lbl">Date & Time:</span><span class="det-val">${escapeHtml(formatDate(order.delivery_date))} &nbsp; ${escapeHtml(formatTime(order.delivery_time))}</span></div>
-    <div class="det-row"><span class="det-lbl">Airport Code:</span><span class="det-val">${escapeHtml(airportCode)}</span></div>
-    <div class="det-row"><span class="det-lbl">FBO:</span><span class="det-val">${escapeHtml(fboName)}</span></div>
-    <div class="det-row"><span class="det-lbl">Tail#:</span><span class="det-val">${escapeHtml(order.aircraft_tail_number || '')}</span></div>
+    <div class="det-row"><span class="det-lbl">Date & Time:</span><span class="det-val" style="color:${getTextColor('delivery_date', c.text)}">${escapeHtml(formatDate(order.delivery_date))} &nbsp; <span style="color:${getTextColor('delivery_time', c.text)}">${escapeHtml(formatTime(order.delivery_time))}</span></span></div>
+    <div class="det-row"><span class="det-lbl">Airport Code:</span><span class="det-val" style="color:${getTextColor('airport', c.text)}">${escapeHtml(airportCode)}</span></div>
+    <div class="det-row"><span class="det-lbl">FBO:</span><span class="det-val" style="color:${getTextColor('fbo', c.text)}">${escapeHtml(fboName)}</span></div>
+    <div class="det-row"><span class="det-lbl">Tail#:</span><span class="det-val" style="color:${getTextColor('aircraft_tail_number', c.text)}">${escapeHtml(order.aircraft_tail_number || '')}</span></div>
   </div>
 </div>
 
-${dietary ? `<div class="warn"><div class="warn-box"><div class="warn-title">!!! RESTRICTIONS & ALLERGIES !!!</div><div class="warn-text">** ${escapeHtml(dietary)} **</div></div></div>` : '<div class="warn"><div class="warn-box"><div class="warn-title">!!! RESTRICTIONS & ALLERGIES !!!</div><div class="warn-text">** N/A **</div></div></div>'}
+${dietary ? `<div class="warn"><div class="warn-box"><div class="warn-title">!!! RESTRICTIONS & ALLERGIES !!!</div><div class="warn-text" style="color:${getTextColor('dietary_restrictions', '#991b1b')}">** ${escapeHtml(dietary)} **</div></div></div>` : '<div class="warn"><div class="warn-box"><div class="warn-title">!!! RESTRICTIONS & ALLERGIES !!!</div><div class="warn-text">** N/A **</div></div></div>'}
 
 ${packagingInst ? `<div class="inst"><div class="inst-box"><div class="inst-text">" ${escapeHtml(packagingInst)} "</div></div></div>` : ''}
 
@@ -742,6 +798,7 @@ ${packagingInst ? `<div class="inst"><div class="inst-box"><div class="inst-text
 <div class="ftr">
   <div class="ftr-msg">Email: Inflight@Kabin247.com &nbsp;&nbsp;&nbsp; Phone: +1-813-331-5667 &nbsp; Address: 4520 W. Oakellar Ave, Unit 13061, Tampa, FL 33611</div>
 </div>
+${order.is_paid === true ? `<div style="position:fixed;top:50%;left:50%;transform:translate(-50%,-50%) rotate(-45deg);font-size:120px;font-weight:900;color:rgba(16,185,129,0.15);z-index:1000;pointer-events:none;font-family:'Times New Roman',Times,serif;letter-spacing:20px">PAID</div>` : ''}
 </div></body></html>`;
 }
 
@@ -1001,6 +1058,38 @@ export function generateOrderPDFB(order: any, styles: PDFStyleConfig = defaultPD
     // Only add page number if this page has content (not empty)
     doc.fillColor(c.textMuted).fontSize(12).font(styles.fonts.body)
       .text(`Page ${i + 1} of ${pages.count}`, m, ph - 30, { width: cw, align: 'right' });
+  }
+
+  // Add PAID stamp if is_paid is true (diagonal watermark)
+  if (order.is_paid === true) {
+    const centerX = pw / 2;
+    const centerY = ph / 2;
+    const stampText = 'PAID';
+    const stampSize = 120;
+    
+    // Add to all pages
+    for (let i = 0; i < pages.count; i++) {
+      doc.switchToPage(i);
+      
+      // Save current state
+      doc.save();
+      
+      // Move to center
+      doc.translate(centerX, centerY);
+      doc.rotate(-45);
+      
+      // Draw semi-transparent PAID text
+      doc.fillColor('#10b981', 0.15); // Green with 15% opacity
+      doc.fontSize(stampSize).font(styles.fonts.bold);
+      const textWidth = doc.widthOfString(stampText);
+      doc.text(stampText, -textWidth / 2, -stampSize / 2, {
+        width: textWidth,
+        align: 'center'
+      });
+      
+      // Restore state
+      doc.restore();
+    }
   }
 
   return doc;

@@ -629,6 +629,10 @@ export class PostgreSQLOrderRepository implements OrderRepository {
       updates.push(`order_number = $${paramIndex++}`);
       values.push(orderData.order_number);
     }
+    if (orderData.is_paid !== undefined) {
+      updates.push(`is_paid = $${paramIndex++}`);
+      values.push(orderData.is_paid);
+    }
 
     // Handle items update - support unlimited items
     if (orderData.items && orderData.items.length > 0) {
@@ -708,8 +712,8 @@ export class PostgreSQLOrderRepository implements OrderRepository {
     // Clear cached PDF since order data has changed
     await this.db.query('DELETE FROM order_pdfs WHERE order_id = $1', [id]);
 
-    // Increment revision_count on any update
-    updates.push(`revision_count = revision_count + 1`);
+    // Note: revision_count is NOT incremented on regular updates
+    // It is only incremented when the order is sent to the caterer (see incrementRevisionCount method)
     updates.push(`updated_at = NOW()`);
     values.push(id);
 
@@ -763,6 +767,26 @@ export class PostgreSQLOrderRepository implements OrderRepository {
     const query = 'DELETE FROM orders WHERE id = $1';
     const result = await this.db.query(query, [id]);
     return result.rowCount > 0;
+  }
+
+  /**
+   * Increment the revision count for an order.
+   * This should only be called when the order is edited AND sent to the caterer.
+   */
+  async incrementRevisionCount(id: number): Promise<Order | null> {
+    const query = `
+      UPDATE orders
+      SET revision_count = revision_count + 1, updated_at = NOW()
+      WHERE id = $1
+      RETURNING *
+    `;
+    const result = await this.db.query(query, [id]);
+    
+    if (result.rows.length === 0) {
+      return null;
+    }
+
+    return this.findById(id);
   }
 
   async deleteMany(ids: number[]): Promise<number> {

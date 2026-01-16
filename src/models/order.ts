@@ -56,7 +56,8 @@ export interface Order {
   delivery_time: string; // Time format: HH:mm
   order_priority: 'low' | 'normal' | 'high' | 'urgent';
   payment_method: 'card' | 'ACH';
-  status: 'awaiting_quote' | 'awaiting_client_approval' | 'awaiting_caterer' | 'caterer_confirmed' | 'in_preparation' | 'ready_for_delivery' | 'delivered' | 'paid' | 'cancelled' | 'order_changed';
+  status: 'awaiting_quote' | 'awaiting_client_approval' | 'awaiting_caterer' | 'caterer_confirmed' | 'in_preparation' | 'ready_for_delivery' | 'delivered' | 'cancelled' | 'order_changed';
+  is_paid?: boolean;
   order_type: OrderType;
   description?: string;
   notes?: string;
@@ -82,6 +83,9 @@ export interface Order {
   created_at?: Date;
   updated_at?: Date;
   completed_at?: Date;
+  // Change tracking for PDF highlighting (not persisted to database)
+  _changedFields?: string[];
+  _changedItemIds?: number[];
 }
 
 export interface CreateOrderDTO {
@@ -173,7 +177,8 @@ export interface UpdateOrderDTO {
   delivery_time?: string;
   order_priority?: 'low' | 'normal' | 'high' | 'urgent';
   payment_method?: 'card' | 'ACH';
-  status?: 'awaiting_quote' | 'awaiting_client_approval' | 'awaiting_caterer' | 'caterer_confirmed' | 'in_preparation' | 'ready_for_delivery' | 'delivered' | 'paid' | 'cancelled' | 'order_changed';
+  status?: 'awaiting_quote' | 'awaiting_client_approval' | 'awaiting_caterer' | 'caterer_confirmed' | 'in_preparation' | 'ready_for_delivery' | 'delivered' | 'cancelled' | 'order_changed';
+  is_paid?: boolean;
   order_type?: OrderType | OrderTypeAlias; // Accept both alias and full type
   description?: string;
   notes?: string;
@@ -222,7 +227,8 @@ export interface OrderListResponse {
 }
 
 export interface OrderStatusUpdateDTO {
-  status: 'awaiting_quote' | 'awaiting_client_approval' | 'awaiting_caterer' | 'caterer_confirmed' | 'in_preparation' | 'ready_for_delivery' | 'delivered' | 'paid' | 'cancelled' | 'order_changed';
+  status: 'awaiting_quote' | 'awaiting_client_approval' | 'awaiting_caterer' | 'caterer_confirmed' | 'in_preparation' | 'ready_for_delivery' | 'delivered' | 'cancelled' | 'order_changed';
+  is_paid?: boolean;
 }
 
 export interface OrderEmailDTO {
